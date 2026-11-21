@@ -20,6 +20,7 @@ const RADIUS = 0.3;
 const REACH = 2.4;
 const BODY_REACH = 4.2; // full-body webcam: aim by body heading, so reach further
 const BODY_SPEED = 1.8; // full-body webcam: m/s at full arm-swing cadence (cam.forward = 1)
+const tmpV = new THREE.Vector3(), fwdV = new THREE.Vector3();
 
 export function collide(p, colliders) {
   p.x = THREE.MathUtils.clamp(p.x, BOUNDS.minX + RADIUS, BOUNDS.maxX - RADIUS);
