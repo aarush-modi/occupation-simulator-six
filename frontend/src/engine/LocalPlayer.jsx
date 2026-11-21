@@ -8,8 +8,8 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useShift } from './store';
 import { localPose, reconcile, samplePlayer } from './net';
 import { use, getIndex, lastGrabAt } from './actions';
-import { staticInteractables, matchesObjective, KIND_GESTURES, anchorFrame, recipeOf, BOUNDS } from './world';
-import { Prop } from './scene';
+import { staticInteractables, matchesObjective, KIND_GESTURES, anchorFrame, recipeOf, BOUNDS, npcPos } from './world';
+import { ItemModel } from './World';
 import { M } from '../game/materials';
 import { B } from '../game/parts';
 import { footstep } from '../game/audio';
@@ -17,7 +17,9 @@ import { cam, onGesture } from '../game/webcam/gestures';
 
 export const EYE = 1.62;
 const RADIUS = 0.3;
-const REACH = 2.4;
+const REACH = 3.0;
+const CAM_REACH = 4.2; // webcam: grab from further away (aim by body heading)
+const CAM_SPEED = 0.6; // webcam walking speed scale (full arm swing = 1.8 m/s)
 const keys = {};
 const tmpV = new THREE.Vector3(), fwdV = new THREE.Vector3();
 
@@ -59,6 +61,7 @@ export default function LocalPlayer({ colliders }) {
   const bob = useRef(0), stepAcc = useRef(0);
   const hands = useRef();
   const spawned = useRef(false);
+  const assist = useRef(null); // webcam aim-assist target [x, y, z]
 
   const key = useShift(interactKey);
   const statics = useMemo(() => {
@@ -100,7 +103,9 @@ export default function LocalPlayer({ colliders }) {
     const offG = onGesture((name) => {
       if (!canPlay()) return;
       const f = useShift.getState().focus;
-      if (!f || !(KIND_GESTURES[f.kind] ?? []).includes(name)) return;
+      // Body mode: a raised hand ('fist') uses whatever is highlighted, whatever its kind.
+      const universal = cam.mode === 'body' && name === 'fist';
+      if (!f || !(universal || (KIND_GESTURES[f.kind] ?? []).includes(name))) return;
       // Opening the hand right after a grab is the grab finishing, not a request to put it down.
       if (name === 'release' && performance.now() - lastGrabAt < 1200) return;
       use(f);
@@ -149,9 +154,23 @@ export default function LocalPlayer({ colliders }) {
     }
     const camOn = cam.enabled && cam.calibrated;
     if (!frozen && camOn) {
-      if (Math.abs(cam.forward) > 0.01) { wx += f.x * cam.forward; wz += f.z * cam.forward; }
+      if (Math.abs(cam.forward) > 0.01) { wx += f.x * cam.forward * CAM_SPEED; wz += f.z * cam.forward * CAM_SPEED; }
       yaw.current += cam.turn * dt;
-      pitch.current = THREE.MathUtils.damp(pitch.current, cam.pitch, 5, dt);
+      // Aim assist (webcam): tilt the view toward the focused thing (body mode has no head pitch), and when the
+      // player stands still and is not turning, ease the heading onto it so a rough torso turn is enough.
+      const tgt = assist.current;
+      if (tgt) {
+        const dx = tgt[0] - pos.current.x, dz = tgt[2] - pos.current.z;
+        const hd = Math.max(0.3, Math.hypot(dx, dz));
+        const wantPitch = THREE.MathUtils.clamp(Math.atan2(tgt[1] - EYE, hd), -0.9, 0.5);
+        pitch.current = THREE.MathUtils.damp(pitch.current, cam.mode === 'body' ? wantPitch : cam.pitch, 4, dt);
+        if (Math.abs(cam.turn) < 0.05 && Math.abs(cam.forward) < 0.05) {
+          let d = Math.atan2(-dx, -dz) - yaw.current;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          yaw.current += THREE.MathUtils.clamp(d * Math.min(1, dt * 2.5), -0.9 * dt, 0.9 * dt);
+        }
+      } else pitch.current = THREE.MathUtils.damp(pitch.current, cam.pitch, 4, dt);
     }
     const wl = Math.hypot(wx, wz);
     if (wl > 1) { wx /= wl; wz /= wl; }
@@ -198,14 +217,33 @@ export default function LocalPlayer({ colliders }) {
     if (!frozen) {
       camera.getWorldDirection(fwdV);
       const obj = s.state?.objectives?.[s.state.cur];
+      const idxNow = getIndex();
+      const hfx = -Math.sin(yaw.current), hfz = -Math.cos(yaw.current);
       const consider = (it) => {
+        if (it.kind === 'talk' && idxNow) {
+          // NPCs walk around: aim at where they are now
+          const np = npcPos(idxNow, it.npc);
+          if (np) it = { ...it, pos: [np[0], 1.4, np[1]] };
+        }
         const dx = it.pos[0] - camera.position.x, dy = it.pos[1] - camera.position.y, dz = it.pos[2] - camera.position.z;
         const dist = Math.hypot(dx, dy, dz);
-        if (dist > REACH + it.r) return;
-        const dot = (dx * fwdV.x + dy * fwdV.y + dz * fwdV.z) / Math.max(dist, 1e-3);
-        const need = Math.cos(Math.min(0.55, Math.atan2(it.r + 0.12, dist)));
-        if (dot < need) return;
-        const score = dot * 2 - dist * 0.08 + (matchesObjective(obj, it) ? 0.25 : 0);
+        const match = matchesObjective(obj, it);
+        let dot, score;
+        if (camOn) {
+          // Webcam: aim by body heading only (no fine head/mouse aim), in a wide cone, with longer reach,
+          // strongly preferring the thing the current step needs.
+          const hd = Math.hypot(dx, dz);
+          if (hd > CAM_REACH + it.r) return;
+          dot = (dx * hfx + dz * hfz) / Math.max(hd, 1e-3);
+          if (dot < Math.cos(match ? 0.9 : 0.55)) return;
+          score = dot * 2 - hd * 0.15 + (match ? 1.5 : 0);
+        } else {
+          if (dist > REACH + it.r) return;
+          dot = (dx * fwdV.x + dy * fwdV.y + dz * fwdV.z) / Math.max(dist, 1e-3);
+          const need = Math.cos(Math.min(0.55, Math.atan2(it.r + 0.12, dist)));
+          if (dot < need) return;
+          score = dot * 2 - dist * 0.08 + (match ? 0.25 : 0);
+        }
         if (score > bestScore) { bestScore = score; best = it; }
       };
       for (const it of staticsRef.current) consider(it);
@@ -221,6 +259,7 @@ export default function LocalPlayer({ colliders }) {
       }
     }
     s.setFocus(best);
+    assist.current = camOn && best ? best.pos : null;
   });
 
   const heldId = useShift((s) => s.state?.players?.[s.you]?.held ?? null);
@@ -239,7 +278,7 @@ export default function LocalPlayer({ colliders }) {
         ))}
         {recipe && (
           <group position={[0, -0.3 - recipe.size[1] * fit * 0.35, -0.55]} rotation={[0.12, 0, 0]} scale={fit}>
-            <Prop recipe={recipe} />
+            <ItemModel id={heldId} recipe={recipe} />
           </group>
         )}
       </group>

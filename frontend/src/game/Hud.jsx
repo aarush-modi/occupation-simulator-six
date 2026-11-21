@@ -4,6 +4,7 @@ import { useGame, STEPS, shiftClock, live } from './store';
 import { interactables } from './world';
 import { startAudio, blip } from './audio';
 import { cam, onGesture, GESTURE_HINT } from './webcam/gestures';
+import { BODY_GESTURE_HINT } from './webcam/pose';
 import WebcamPanel from './webcam/WebcamPanel';
 import { gestureList } from './Player';
 import * as flow from './flow';
@@ -51,7 +52,7 @@ function Prompt() {
             <span style={{ background: '#f2b233', color: '#111', fontWeight: 800, borderRadius: 4, padding: '1px 7px' }}>E</span>{label}
           </div>
           {cam.enabled && gestureList(it)[0] && (
-            <div style={{ fontSize: 13, color: '#f2b233' }}>Webcam: {GESTURE_HINT[gestureList(it)[0]]}</div>
+            <div style={{ fontSize: 13, color: '#f2b233' }}>Webcam: {(cam.mode === 'body' ? BODY_GESTURE_HINT : GESTURE_HINT)[gestureList(it)[0]]}</div>
           )}
         </div>
       )}
@@ -244,7 +245,7 @@ function Skill() {
     <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', padding: '22px 26px', ...ui.panel, color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div style={{ fontSize: 12, letterSpacing: 3, color: '#f2b233', textTransform: 'uppercase', marginBottom: 6 }}>{skill.title}</div>
       {skill.help && <div style={{ fontSize: 13, color: '#bbb', marginBottom: cam.enabled ? 4 : 16, maxWidth: 460, textAlign: 'center' }}>{skill.help}</div>}
-      {cam.enabled && <div style={{ fontSize: 13, color: '#f2b233', marginBottom: 16 }}>{{ timing: 'Webcam: snap a fist to stop', steady: 'Webcam: rotate your hand like a wheel', presshold: 'Webcam: push your palm toward the camera and hold', choice: 'Webcam: show 1 or 2 fingers' }[skill.type]}</div>}
+      {cam.enabled && <div style={{ fontSize: 13, color: '#f2b233', marginBottom: 16 }}>{(cam.mode === 'body' ? { timing: 'Webcam: raise a hand to stop', steady: 'Webcam: tilt your hands like a steering wheel', presshold: 'Webcam: push one hand forward and hold', choice: 'Webcam: raise one hand (1) or both hands (2)' } : { timing: 'Webcam: snap a fist to stop', steady: 'Webcam: rotate your hand like a wheel', presshold: 'Webcam: push your palm toward the camera and hold', choice: 'Webcam: show 1 or 2 fingers' })[skill.type]}</div>}
       <Comp skill={skill} close={closeSkill} />
     </div>
   );

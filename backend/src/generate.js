@@ -1,6 +1,9 @@
 // Scenario generation with Gemini (F1, N1, N2).
 // One bounded request per uncached occupation; if the answer fails validation, one retry with the errors appended.
 // The whole job (both attempts) must finish inside the budget (default 8 s), otherwise it fails and the host picks a demo.
+// A spoken request (N4) sends the host's short audio clip as an inlineData part of that same request; the model infers
+// the occupation and returns it in `blueprint.occupation`. Audio requests skip the cache lookup, but the resulting
+// blueprint is cached under the inferred occupation.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,7 +39,7 @@ export function guessShells(occupation) {
 const compact = (r) => {
   const e = { id: r.id, kind: r.kind, shells: r.shells, tags: r.tags };
   if (r.slots?.length) e.slots = r.slots.map((s) => ({ id: s.id, accepts: s.accepts }));
-  if (r.controls?.length) e.controls = r.controls.map((c) => ({ id: c.id, label: c.label, requires: c.requires ?? [], ...(c.sets ? { sets: c.sets } : {}) }));
+  if (r.controls?.length) e.controls = r.controls.map((c) => ({ id: c.id, label: c.label, requires: c.requires ?? [], ...(c.sets ? { sets: c.sets } : {}), ...(c.combine ? { combine: true } : {}) }));
   return e;
 };
 
@@ -97,7 +100,7 @@ export function systemPrompt(menu, example) {
     '- spot: P1 P2 P3, where NPCs stand (one NPC per spot).',
     '',
     'CATALOG MENU (JSON lines). kind station = interactive (slots hold items, controls are pressed); item = carried; furniture/decor = dressing.',
-    'An item fits a slot when ANY item tag is in the slot `accepts`. A control with `requires` can only be pressed when those slots of the SAME station hold an item; `sets` adds that tag to the item in the first required slot (e.g. brewed), which later slots may accept.',
+    'An item fits a slot when ANY item tag is in the slot `accepts`. A control with `requires` can only be pressed when those slots of the SAME station hold an item; `sets` adds that tag to the item in the first required slot (e.g. brewed), which later slots may accept. A control with `combine: true` also merges the items in its other required slots into that first item (e.g. wrap + flowers + greenery -> bouquet); afterwards only the first item exists and is carried.',
     ...menu.map((r) => JSON.stringify(compact(r))),
     '',
     'RULES (the result is machine-checked; a broken shift is thrown away):',
@@ -120,6 +123,31 @@ export function systemPrompt(menu, example) {
 
 // ---------- generator ----------
 
+export const DEFAULT_MODEL = 'gemini-4-carbon';
+
+/** generateContent params for one attempt. A spoken request's clip is an inlineData part next to the text turn. */
+export function geminiRequest({ model, system, user, schema, signal, audio = null, thinking = null }) {
+  return {
+    model,
+    contents: [{ role: 'user', parts: [...(audio ? [{ inlineData: { mimeType: audio.mimeType, data: audio.data } }] : []), { text: user }] }],
+    config: {
+      systemInstruction: system,
+      responseMimeType: 'application/json',
+      responseJsonSchema: schema,
+      temperature: 0.7,
+      ...(thinking ? { thinkingConfig: { thinkingLevel: thinking } } : {}),
+      abortSignal: signal,
+    },
+  };
+}
+
+/** User turn for a spoken request; the audio itself travels as an inlineData part next to this text. */
+export const AUDIO_PROMPT =
+  'The attached audio clip is the host asking, out loud, for the job they want to try. ' +
+  'Infer the occupation from the clip and design the shift for it. ' +
+  'Put that occupation in the `occupation` field as a short lowercase job title in English (e.g. "barista", "tattoo artist"). ' +
+  'If the clip is unclear or names no job, choose a fitting, well-known occupation from whatever you can hear.';
+
 /**
  * @param {object} o
  * @param {Array} o.catalog
@@ -127,11 +155,14 @@ export function systemPrompt(menu, example) {
  * @param {string} [o.model]
  * @param {number} [o.budgetMs]
  * @param {object} [o.example] blueprint used as a format example in the prompt
- * @param {(req:{system:string, user:string, schema:object, signal:AbortSignal}) => Promise<{text:string, usage?:object}>} [o.callModel]
+ * @param {(req:{system:string, user:string, schema:object, signal:AbortSignal, audio?:{mimeType:string, data:string}}) => Promise<{text:string, usage?:object}>} [o.callModel]
+ *   `audio` (base64 data) is present only on the first attempt of a spoken request.
  */
-export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, model = process.env.GEMINI_MODEL || 'gemini-3.5-flash', budgetMs = Number(process.env.GEMINI_BUDGET_MS) || 8000, example = null, callModel = null, log = console } = {}) {
+export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, model = process.env.GEMINI_MODEL || DEFAULT_MODEL, budgetMs = Number(process.env.GEMINI_BUDGET_MS) || 8000, example = null, callModel = null, log = console } = {}) {
   const cache = new Map(); // normalised occupation -> blueprint
   const inflight = new Map();
+  // Running totals for N2 (logged with every generation and exposed on /health).
+  const stats = { requests: 0, cacheHits: 0, generated: 0, ok: 0, firstPassValid: 0 };
   // MINIMAL thinking keeps latency down; some models reject it, then we drop thinkingConfig for that model.
   const thinking = process.env.GEMINI_THINKING || 'MINIMAL';
   const noThinking = new Set();
@@ -139,22 +170,10 @@ export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, 
 
   const call =
     callModel ??
-    (async ({ system, user, schema, signal }) => {
+    (async ({ system, user, schema, signal, audio }) => {
       if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
       ai ??= new GoogleGenAI({ apiKey });
-      const request = (withThinking) =>
-        ai.models.generateContent({
-          model,
-          contents: [{ role: 'user', parts: [{ text: user }] }],
-          config: {
-            systemInstruction: system,
-            responseMimeType: 'application/json',
-            responseJsonSchema: schema,
-            temperature: 0.7,
-            ...(withThinking ? { thinkingConfig: { thinkingLevel: thinking } } : {}),
-            abortSignal: signal,
-          },
-        });
+      const request = (withThinking) => ai.models.generateContent(geminiRequest({ model, system, user, schema, signal, audio, thinking: withThinking ? thinking : null }));
       const useThinking = thinking && thinking !== 'none' && !noThinking.has(model);
       let res;
       try {
@@ -167,13 +186,14 @@ export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, 
       return { text: res.text, usage: res.usageMetadata };
     });
 
-  async function run(occupation) {
+  async function run(occupation, audio) {
     const t0 = Date.now();
-    const menu = menuFor(catalog, occupation);
+    // A spoken request has no occupation to trim the menu by, so it sees the whole catalog.
+    const menu = audio ? catalog : menuFor(catalog, occupation);
     const system = systemPrompt(menu, example);
     const schema = responseSchema(menu);
     const attempts = [];
-    let user = `Occupation: ${occupation}`;
+    let user = audio ? AUDIO_PROMPT : `Occupation: ${occupation}`;
     let lastErrors = [];
     for (let attempt = 1; attempt <= 2; attempt++) {
       const left = budgetMs - (Date.now() - t0);
@@ -188,7 +208,7 @@ export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, 
       let usage;
       try {
         ({ text, usage } = await Promise.race([
-          call({ system, user, schema, signal: ac.signal }),
+          call({ system, user, schema, signal: ac.signal, ...(audio && attempt === 1 ? { audio } : {}) }),
           new Promise((_, rej) => ac.signal.addEventListener('abort', () => rej(new Error(`timed out after ${budgetMs} ms`)))),
         ]));
       } catch (err) {
@@ -211,17 +231,22 @@ export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, 
       attempts.push({ attempt, ms: Date.now() - ta, usage: usageOf(usage), valid: errors.length === 0, errors: errors.slice(0, 8), warnings: warnings.slice(0, 5) });
       if (!errors.length) return finish({ ok: true, blueprint, occupation, t0, attempts, menu });
       lastErrors = errors;
+      // The retry does not resend the audio: the previous answer already carries the inferred occupation.
       user =
-        `Occupation: ${occupation}\n\nYour previous answer was:\n${text}\n\n` +
+        `${audio ? 'Occupation: the one in your previous answer (inferred from a spoken request)' : `Occupation: ${occupation}`}\n\nYour previous answer was:\n${text}\n\n` +
         `It failed validation with these errors:\n- ${errors.slice(0, 12).join('\n- ')}\n\nReturn a corrected complete JSON object.`;
     }
     return finish({ ok: false, error: lastErrors.slice(0, 6).join('; '), occupation, t0, attempts, menu });
   }
 
   function finish({ ok, blueprint, error, occupation, t0, attempts, menu }) {
+    stats.generated++;
+    if (ok) stats.ok++;
+    if (attempts[0]?.valid === true) stats.firstPassValid++;
     const meta = {
       at: new Date().toISOString(),
       occupation,
+      ...(ok && blueprint.occupation !== occupation ? { inferredOccupation: blueprint.occupation } : {}),
       model,
       ok,
       ms: Date.now() - t0,
@@ -230,6 +255,7 @@ export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, 
       attempts,
       menuSize: menu.length,
       tokens: sumUsage(attempts),
+      stats: statsSummary(),
     };
     record(meta);
     return ok ? { ok, blueprint, meta } : { ok, error, meta };
@@ -243,11 +269,34 @@ export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, 
     } catch {}
   }
 
-  /** Generate (or fetch from cache) a validated blueprint for an occupation. Never throws. */
-  async function generate(occupation) {
+  function statsSummary() {
+    return {
+      ...stats,
+      cacheHitRate: stats.requests ? +(stats.cacheHits / stats.requests).toFixed(3) : 0,
+      firstPassRate: stats.generated ? +(stats.firstPassValid / stats.generated).toFixed(3) : 0,
+    };
+  }
+
+  /**
+   * Generate (or fetch from cache) a validated blueprint for an occupation. Never throws.
+   * With `audio` ({ mimeType, data: base64 }) the occupation is only a label for logs; the model infers the real one
+   * from the clip and the result is cached under that inferred occupation.
+   */
+  async function generate(occupation, { audio = null } = {}) {
+    stats.requests++;
+    if (audio) {
+      const label = occupation || 'spoken request';
+      const r = await run(label, audio).catch((err) => ({ ok: false, error: String(err?.message ?? err), meta: { occupation: label, model } }));
+      if (r.ok && r.blueprint.occupation?.trim()) {
+        const key = normalise(r.blueprint.occupation);
+        if (key && !cache.has(key)) cache.set(key, r.blueprint);
+      }
+      return r;
+    }
     const key = normalise(occupation);
     if (cache.has(key)) {
-      const meta = { at: new Date().toISOString(), occupation, model, ok: true, ms: 0, cacheHit: true };
+      stats.cacheHits++;
+      const meta = { at: new Date().toISOString(), occupation, model, ok: true, ms: 0, cacheHit: true, stats: statsSummary() };
       log.log(`[gemini] ${JSON.stringify(meta)}`);
       return { ok: true, blueprint: cache.get(key), meta };
     }
@@ -263,7 +312,7 @@ export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, 
     return p;
   }
 
-  return { generate, cache, model };
+  return { generate, cache, model, stats: statsSummary };
 }
 
 const usageOf = (u) =>

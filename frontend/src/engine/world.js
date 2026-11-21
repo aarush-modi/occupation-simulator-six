@@ -4,6 +4,7 @@ import { ANCHORS, ROOM } from '../shared/layout.js';
 import { CATALOG } from '../shared/catalog/catalog.generated.js';
 
 import { backendUrl, BACKEND } from './config';
+import { sampleNpc } from './interp';
 
 export { backendUrl, BACKEND };
 export const WS_BASE = BACKEND.replace(/^http/, 'ws');
@@ -70,9 +71,17 @@ export function controlPos(idx, target) {
   return c ? toWorld(st.frame, c.pos) : null;
 }
 
-export function npcHead(idx, id) {
+/** Where an NPC is right now (server-driven, interpolated), falling back to their spot. [x, z] */
+export function npcPos(idx, id) {
+  const live = sampleNpc(id);
+  if (live) return live.pos;
   const n = idx.npcs[id];
-  return n ? [n.frame.pos[0], 1.55, n.frame.pos[2]] : null;
+  return n ? [n.frame.pos[0], n.frame.pos[2]] : null;
+}
+
+export function npcHead(idx, id) {
+  const p = npcPos(idx, id);
+  return p ? [p[0], 1.55, p[1]] : null;
 }
 
 export function itemTags(idx, state, id) {
@@ -110,7 +119,7 @@ export function staticInteractables(idx, state, you) {
       const f = restFrame(idx, it.at);
       if (!f) continue;
       const h = idx.items[id]?.recipe.size[1] ?? 0.2;
-      out.push({ id: `grab:${id}`, kind: 'grab', pos: [f.pos[0], f.pos[1] + h * 0.5, f.pos[2]], r: 0.3, label: `Pick up ${idx.items[id]?.label ?? id}`, intent: { t: 'grab', item: id }, station: splitTarget(it.at)[1] != null ? splitTarget(it.at)[0] : null, item: id });
+      out.push({ id: `grab:${id}`, kind: 'grab', pos: [f.pos[0], f.pos[1] + h * 0.5, f.pos[2]], r: 0.45, label: `Pick up ${idx.items[id]?.label ?? id}`, intent: { t: 'grab', item: id }, station: splitTarget(it.at)[1] != null ? splitTarget(it.at)[0] : null, item: id });
     }
   } else {
     const tags = itemTags(idx, state, held);
@@ -119,19 +128,19 @@ export function staticInteractables(idx, state, you) {
       for (const slot of st.recipe.slots) {
         const at = `${st.id}.${slot.id}`;
         if (!tags.some((t) => slot.accepts.includes(t)) || occupied(state, at)) continue;
-        out.push({ id: `place:${at}`, kind: 'place', pos: toWorld(st.frame, [slot.pos[0], slot.pos[1] + 0.08, slot.pos[2]]), r: 0.35, label: `Place ${heldLabel} on ${st.label}`, intent: { t: 'place', item: held, target: at }, station: st.id, target: at });
+        out.push({ id: `place:${at}`, kind: 'place', pos: toWorld(st.frame, [slot.pos[0], slot.pos[1] + 0.08, slot.pos[2]]), r: 0.5, label: `Place ${heldLabel} on ${st.label}`, intent: { t: 'place', item: held, target: at }, station: st.id, target: at });
       }
     }
     for (const s of SURFACES) {
       if (occupied(state, s)) continue;
       const f = anchorFrame(s);
-      out.push({ id: `place:${s}`, kind: 'place', pos: [f.pos[0], f.pos[1] + 0.05, f.pos[2]], r: 0.4, label: `Put ${heldLabel} down`, intent: { t: 'place', item: held, target: s }, target: s });
+      out.push({ id: `place:${s}`, kind: 'place', pos: [f.pos[0], f.pos[1] + 0.05, f.pos[2]], r: 0.5, label: `Put ${heldLabel} down`, intent: { t: 'place', item: held, target: s }, target: s });
     }
   }
   for (const st of Object.values(idx.stations)) {
     for (const c of st.recipe.controls) {
       const target = `${st.id}.${c.id}`;
-      out.push({ id: `press:${target}`, kind: 'press', pos: toWorld(st.frame, c.pos), r: 0.25, label: `${c.label}${closed.has(st.id) ? ' (closed)' : ''}`, intent: { t: 'press', target }, station: st.id, target, requires: c.requires ?? [] });
+      out.push({ id: `press:${target}`, kind: 'press', pos: toWorld(st.frame, c.pos), r: 0.4, label: `${c.label}${closed.has(st.id) ? ' (closed)' : ''}`, intent: { t: 'press', target }, station: st.id, target, requires: c.requires ?? [] });
     }
   }
   for (const n of Object.values(idx.npcs)) {

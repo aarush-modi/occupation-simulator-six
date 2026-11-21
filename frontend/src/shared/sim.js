@@ -6,10 +6,13 @@
 //   applyIntent(state, playerId, intent, now) -> { state, events }   never throws
 //   tick(state, now) -> { state, events }                            event director + stale-player hold release
 import { ANCHORS, ROOM } from './layout.js';
+import { buildNav, standPoint, findPath } from './nav.js';
 
 export const MAX_PLAYERS = 4;
 export const STALE_MS = 5000; // release held items of players unseen for longer than this
 export const DROP_MS = 30000; // forget players unseen for longer than this (frees one of the 4 seats)
+export const STUCK_MS = 35000; // an idle NPC walks over to help when the crew is stuck on one step this long
+export const NPC_SPEED = 1.3; // m/s
 
 const CTX = Symbol('workshift.ctx');
 const SURFACES = Object.keys(ANCHORS).filter((id) => ANCHORS[id].kind === 'surface');
@@ -30,7 +33,9 @@ function buildCtx(bp, catalog) {
   }
   const items = new Map((bp.items ?? []).map((it) => [it.id, { ...it, recipe: recipes.get(it.prop) }]));
   const npcs = new Map((bp.npcs ?? []).map((n) => [n.id, n]));
-  return { bp, recipes, stations, items, npcs, event: bp.event ?? null };
+  let nav = null;
+  try { nav = buildNav(bp, recipes); } catch { nav = null; }
+  return { bp, recipes, stations, items, npcs, nav, event: bp.event ?? null };
 }
 
 function ctxOf(state) {
@@ -71,7 +76,14 @@ export function createRoom(blueprint, catalog, now = Date.now()) {
     closed: [],
     event: { fired: false, at: null },
     score: { startedAt: now, finishedAt: null, skills: {} },
+    npcs: {},
+    stepSince: now, // when the current objective became current (NPC help timing)
+    npcTick: now,
   };
+  for (const n of ctx.npcs.values()) {
+    const a = ANCHORS[n.anchor];
+    state.npcs[n.id] = { home: n.anchor, pos: a ? [a.pos[0], a.pos[2]] : [0, 0], yaw: a?.rotY ?? 0, goal: 'post', target: null, path: [], moving: false };
+  }
   Object.defineProperty(state, CTX, { value: ctx, enumerable: false });
   return state;
 }
@@ -88,7 +100,7 @@ function splitTarget(target) {
 }
 
 function itemAt(state, at) {
-  for (const [id, it] of Object.entries(state.items)) if (it.at === at && !it.holder) return id;
+  for (const [id, it] of Object.entries(state.items)) if (it.at === at && !it.holder && !it.in) return id;
   return null;
 }
 
@@ -118,6 +130,7 @@ function maybeReview(state, ctx, now, events) {
   if (pending) return;
   state.phase = 'review';
   state.score.finishedAt = now;
+  for (const n of Object.values(state.npcs ?? {})) if (n.goal !== 'post') setGoal(state, ctx, n, 'post', null);
   const npc = ctx.bp.npcs?.[0];
   if (npc?.lines?.done) events.push({ type: 'say', npc: npc.id, text: npc.lines.done });
   events.push({ type: 'review' });
@@ -128,6 +141,8 @@ function completeCurrent(state, ctx, skillScore, now, events) {
   state.done.push(obj.id);
   state.cur += 1;
   state.score.skills[obj.id] = isNum(skillScore) ? clamp(skillScore, 0, 1) : 1;
+  state.stepSince = now;
+  for (const n of Object.values(state.npcs ?? {})) if (n.goal === 'guide') setGoal(state, ctx, n, 'post', null);
   events.push({ type: 'objective', id: obj.id });
   if (obj.say) events.push({ type: 'say', npc: obj.say.npc, text: obj.say.text });
   if (ctx.event && ctx.event.after === obj.id && !state.event.fired && state.event.at === null) {
@@ -275,6 +290,7 @@ function grab(s, ctx, playerId, p, intent, now, events) {
   const it = s.items[id];
   if (!it) return deny(events, playerId, `no item ${id}`);
   if (it.holder === playerId) return;
+  if (it.in) return deny(events, playerId, `part of ${it.in}`);
   if (it.holder) return deny(events, playerId, 'held by someone else');
   if (p.held) return deny(events, playerId, 'hands full');
   const st = stationOfLocation(it.at);
@@ -325,7 +341,20 @@ function press(s, ctx, playerId, intent, now, events) {
     first ??= here;
   }
   if (ctrl.sets && first && !s.items[first].tags.includes(ctrl.sets)) s.items[first].tags.push(ctrl.sets);
-  events.push({ type: 'pressed', playerId, target, ...(ctrl.sets && first ? { item: first, sets: ctrl.sets } : {}) });
+  // combine: the items in the other required slots become part of the first one (assembling a set of materials).
+  const combined = [];
+  if (ctrl.combine && first) {
+    for (const slotId of (ctrl.requires ?? []).slice(1)) {
+      const id = itemAt(s, `${stId}.${slotId}`);
+      if (!id || id === first) continue;
+      const part = s.items[id];
+      part.at = null;
+      part.in = first;
+      s.items[first].contains = [...(s.items[first].contains ?? []), id, ...(part.contains ?? [])];
+      combined.push(id);
+    }
+  }
+  events.push({ type: 'pressed', playerId, target, ...(ctrl.sets && first ? { item: first, sets: ctrl.sets } : {}), ...(combined.length ? { combined } : {}) });
   progress(s, ctx, (o) => o.verb === 'press' && o.target === target, intent.skillScore, now, events);
 }
 
@@ -339,7 +368,7 @@ function talk(s, ctx, playerId, intent, now, events) {
     return;
   }
   // Not a talk step: the NPC points the player at the current task.
-  events.push({ type: 'say', npc: npc.id, text: obj ? `Next up: ${obj.label}` : (npc.lines?.done ?? 'Nice work.') });
+  events.push({ type: 'say', npc: npc.id, text: instruction(s, ctx, obj, npc) });
 }
 
 function handoff(s, ctx, playerId, p, intent, now, events) {
@@ -368,6 +397,13 @@ export function tick(state, now = Date.now()) {
     // Event director.
     if (ctx.event && !state.event.fired && state.event.at !== null && now >= state.event.at && state.phase === 'play') {
       fireEvent(w(), ctx, now, events);
+    }
+
+    // NPC goals and movement (F6): runs every tick while there is a shift or someone still walking home.
+    if (state.npcs && (state.phase === 'play' || Object.values(state.npcs).some((n) => n.path?.length))) {
+      const t = w();
+      npcThink(t, ctx, now, events);
+      moveNpcs(t, now);
     }
 
     // Stale players: release holds after STALE_MS, forget after DROP_MS.
@@ -400,6 +436,18 @@ function fireEvent(s, ctx, now, events) {
   const keptIds = new Set(kept.map((o) => o.id));
   s.done = s.done.filter((id) => keptIds.has(id));
   for (const id of Object.keys(s.score.skills)) if (!keptIds.has(id)) delete s.score.skills[id];
+  s.stepSince = now;
+  // NPC goals change with the event: the announcer goes to deal with the closed station (or points the crew
+  // at the revised task when nothing closed); everyone else drops what they were doing.
+  for (const n of Object.values(s.npcs ?? {})) if (n.goal === 'guide') setGoal(s, ctx, n, 'post', null);
+  const lead = s.npcs?.[ev.announce.npc];
+  if (lead) {
+    if (ev.close && ctx.stations.has(ev.close)) setGoal(s, ctx, lead, 'repair', ev.close);
+    else {
+      const spot = objectiveSpot(s, ctx, s.objectives[s.cur]);
+      if (spot) setGoal(s, ctx, lead, 'guide', spot);
+    }
+  }
   // Items held inside the closed station stay there; the validator proves the revised task never needs them.
   settle(s, ctx, now, events);
 }
@@ -407,4 +455,78 @@ function fireEvent(s, ctx, now, events) {
 /** The objective the players are currently on, or null. */
 export function currentObjective(state) {
   return state.objectives[state.cur] ?? null;
+}
+
+// ---------- NPCs (goal-based state machines, F6) ----------
+// Goals: post (stand at the home spot and face the crew), guide (walk to the station of the current step and
+// point at it), repair (work at a station the event closed). Paths come from the nav grid; positions are XZ.
+
+/** Station id or anchor id where the given objective happens, or null (talk steps happen at the NPC). */
+export function objectiveSpot(state, ctx, obj) {
+  if (!obj) return null;
+  const loc = (at) => (at ? (at.includes('.') ? splitTarget(at)[0] : at) : null);
+  if (obj.verb === 'grab') return loc(state.items[obj.target]?.at);
+  if (obj.verb === 'place') {
+    const it = state.items[obj.item];
+    if (it && !it.holder && it.at !== obj.target) return loc(it.at); // fetch it first
+    return loc(obj.target);
+  }
+  if (obj.verb === 'press') return splitTarget(obj.target)[0];
+  return null;
+}
+
+function setGoal(state, ctx, npc, goal, target) {
+  npc.goal = goal;
+  npc.target = target;
+  const a = ANCHORS[npc.home];
+  const dest = goal === 'post' ? (a ? [a.pos[0], a.pos[2]] : null) : ctx.nav ? standPoint(ctx.nav, target) : null;
+  if (!dest) { npc.path = []; return; }
+  const path = ctx.nav ? findPath(ctx.nav, npc.pos, dest) : null;
+  npc.path = path ? path.slice(1) : [dest];
+  npc.dest = dest;
+}
+
+function npcThink(s, ctx, now, events) {
+  if (s.phase !== 'play') return;
+  const obj = s.objectives[s.cur];
+  const anyGuide = Object.values(s.npcs).some((n) => n.goal === 'guide');
+  if (!anyGuide && obj && obj.verb !== 'talk' && now - (s.stepSince ?? now) > STUCK_MS) {
+    const id = Object.keys(s.npcs).find((k) => s.npcs[k].goal === 'post');
+    const spot = objectiveSpot(s, ctx, obj);
+    if (id && spot) {
+      setGoal(s, ctx, s.npcs[id], 'guide', spot);
+      s.stepSince = now; // do not re-trigger until the next stall
+      const where = ctx.stations.get(spot)?.label ?? 'the counter';
+      events.push({ type: 'say', npc: id, text: `Over here at the ${where.toLowerCase()}. ${obj.label}.` });
+    }
+  }
+}
+
+function moveNpcs(s, now) {
+  const dt = Math.min(0.25, Math.max(0, (now - (s.npcTick ?? now)) / 1000));
+  s.npcTick = now;
+  for (const n of Object.values(s.npcs)) {
+    let budget = NPC_SPEED * dt;
+    while (budget > 0 && n.path?.length) {
+      const [tx, tz] = n.path[0];
+      const dx = tx - n.pos[0], dz = tz - n.pos[1];
+      const d = Math.hypot(dx, dz);
+      if (d > 1e-3) n.yaw = Math.atan2(dx, dz);
+      if (d <= budget) { n.pos = [tx, tz]; n.path.shift(); budget -= d; }
+      else { n.pos = [n.pos[0] + (dx / d) * budget, n.pos[1] + (dz / d) * budget]; budget = 0; }
+    }
+    n.pos = [Math.round(n.pos[0] * 1000) / 1000, Math.round(n.pos[1] * 1000) / 1000];
+    n.moving = !!n.path?.length;
+  }
+}
+
+const lower = (t) => (t ? t.charAt(0).toLowerCase() + t.slice(1) : t);
+
+/** What an NPC tells a player who talks to them outside a talk step, given the live task state. */
+function instruction(s, ctx, obj, npc) {
+  if (!obj) return npc.lines?.done ?? 'Nice work.';
+  const closed = s.closed.map((id) => ctx.stations.get(id)?.label).filter(Boolean);
+  const now = `${obj.label}.`;
+  if (closed.length) return `${closed[0]} is out of action, so we work around it. ${now}`;
+  return `Next up: ${lower(now)}`;
 }

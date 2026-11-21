@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "occupation": "florist",
+  "title": "Saturday Bouquet Order",
+  "briefing": "You are the florist on a busy Saturday. Pull red roses and eucalyptus from the buckets, build a hand-tied bouquet in kraft paper, and get it to the customer.",
+  "shell": "shop",
+  "stations": [
+    { "id": "stand", "prop": "florist_bucket_stand", "anchor": "N2", "label": "Flower bucket stand" },
+    { "id": "bench", "prop": "florist_workbench", "anchor": "N4", "label": "Design workbench" },
+    { "id": "counter", "prop": "florist_counter", "anchor": "I3", "label": "Register counter" },
+    { "id": "delivery", "prop": "florist_delivery_rack", "anchor": "E2", "label": "Delivery cart" }
+  ],
+  "items": [
+    { "id": "wrap", "prop": "bouquet_wrap", "anchor": "bench.wrap", "label": "Kraft paper wrap" },
+    { "id": "roses", "prop": "flower_roses", "anchor": "stand.roses", "label": "Red roses" },
+    { "id": "greens", "prop": "greenery_bundle", "anchor": "stand.greens", "label": "Eucalyptus" }
+  ],
+  "decor": [
+    { "prop": "gen_potted_plant_tall", "anchor": "W1" },
+    { "prop": "gen_wooden_crates", "anchor": "W2" },
+    { "prop": "gen_potted_plant_agave", "anchor": "N1" },
+    { "prop": "gen_wooden_shelving", "anchor": "N5" },
+    { "prop": "gen_potted_plant_snake", "anchor": "E1" },
+    { "prop": "gen_floor_rug", "anchor": "I4" }
+  ],
+  "npcs": [
+    {
+      "id": "rosa", "name": "Rosa", "role": "Shop owner", "anchor": "P3", "outfit": "apron",
+      "lines": { "intro": "Sam wants a hand-tied bouquet: red roses with eucalyptus. Flowers are in the buckets, the wrap is on the bench.", "done": "Beautiful work. Sam will love it." }
+    },
+    {
+      "id": "sam", "name": "Sam", "role": "Customer", "anchor": "P1", "outfit": "casual",
+      "lines": { "intro": "It's for my mum's birthday. Red roses are her favourite!", "done": "It's gorgeous, thank you!" }
+    }
+  ],
+  "objectives": [
+    { "id": "checkin", "verb": "talk", "target": "rosa", "label": "Get the order from Rosa", "skill": "none" },
+    { "id": "grab_roses", "verb": "grab", "target": "roses", "label": "Pull the red roses from their bucket", "skill": "none" },
+    { "id": "lay_roses", "verb": "place", "target": "bench.stems", "item": "roses", "label": "Lay the roses on the workbench", "skill": "steady" },
+    { "id": "grab_greens", "verb": "grab", "target": "greens", "label": "Pull a bundle of eucalyptus", "skill": "none" },
+    { "id": "lay_greens", "verb": "place", "target": "bench.greens", "item": "greens", "label": "Lay the eucalyptus on the workbench", "skill": "steady" },
+    { "id": "tie", "verb": "press", "target": "bench.tie", "label": "Arrange the stems in the wrap and tie it with twine", "skill": "hold", "say": { "npc": "rosa", "text": "Lovely spiral. Roses in the middle, greenery framing them." } },
+    { "id": "take_bouquet", "verb": "grab", "target": "wrap", "label": "Pick up the finished bouquet", "skill": "none" },
+    { "id": "to_counter", "verb": "place", "target": "counter.pickup", "item": "wrap", "label": "Set the bouquet on the register counter", "skill": "steady" },
+    { "id": "ring_up", "verb": "press", "target": "counter.ring", "label": "Ring up Sam's order", "skill": "none", "say": { "npc": "sam", "text": "Perfect, thank you so much!" } }
+  ],
+  "event": {
+    "after": "tie",
+    "delaySec": 4,
+    "announce": { "npc": "rosa", "text": "The card reader just went down, and Sam has asked us to deliver it to his mum instead. He'll pay online. Put the bouquet in the delivery cart and send it with the driver." },
+    "close": "counter",
+    "replaceRemaining": [
+      { "id": "take_for_delivery", "verb": "grab", "target": "wrap", "label": "Pick up the finished bouquet", "skill": "none" },
+      { "id": "load_cart", "verb": "place", "target": "delivery.crate", "item": "wrap", "label": "Stand the bouquet in the delivery cart crate", "skill": "steady" },
+      { "id": "dispatch", "verb": "press", "target": "delivery.dispatch", "label": "Send it out with the driver", "skill": "none", "say": { "npc": "sam", "text": "Mum's going to be so surprised. Thank you!" } }
+    ]
+  },
+  "facts": [
+    "Florists cut stems at an angle so they can take up more water.",
+    "A hand-tied bouquet is built in a spiral so the stems fan out and stand on their own.",
+    "Leaves below the water line are stripped to keep bacteria out of the vase.",
+    "Eucalyptus is a favourite filler because it lasts for weeks and smells fresh."
+  ]
+}

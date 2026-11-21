@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { createRoom, applyIntent, tick } from '../../frontend/src/shared/sim.js';
 import { pickDemo } from './demos.js';
 
+export const SPOKEN_OCCUPATION = 'Spoken request'; // placeholder until the model infers the job from the clip
 export const TICK_MS = 50; // 20 snapshots per second
 const IDLE_MS = 30 * 60 * 1000;
 
@@ -10,10 +11,12 @@ const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no look-alikes, easy to r
 const newId = (n) => [...randomBytes(n)].map((b) => ALPHABET[b % ALPHABET.length]).join('');
 
 export class Room {
-  constructor(id, occupation, deps) {
+  constructor(id, occupation, deps, { audio = null } = {}) {
     this.id = id;
     this.occupation = occupation;
     this.deps = deps; // { catalog, demos, log }
+    this.audio = audio; // { mimeType, data } for a spoken request, dropped once generation finishes
+    this.spoken = !!audio;
     this.status = 'generating';
     this.error = null;
     this.source = null; // 'gemini' | 'demo'
@@ -39,7 +42,7 @@ export class Room {
   }
 
   statusMsg() {
-    return { type: 'status', status: this.status, ...(this.blueprint ? { blueprint: this.blueprint } : {}), ...(this.error ? { error: this.error } : {}) };
+    return { type: 'status', status: this.status, occupation: this.occupation, ...(this.blueprint ? { blueprint: this.blueprint } : {}), ...(this.error ? { error: this.error } : {}) };
   }
 
   // ----- generation -----
@@ -50,8 +53,18 @@ export class Room {
     this.status = 'generating';
     this.error = null;
     this.broadcast(this.statusMsg());
-    const r = await generator.generate(this.occupation);
+    const audio = this.audio;
+    let r;
+    try {
+      r = await (audio ? generator.generate(this.occupation, { audio }) : generator.generate(this.occupation));
+    } finally {
+      this.audio = null; // one bounded request per spoken prompt; do not keep the clip around
+    }
     if (token !== this.genToken) return r;
+    if (r.ok && this.spoken && r.blueprint.occupation?.trim()) {
+      this.occupation = r.blueprint.occupation.trim().slice(0, 80);
+      this.deps.log?.log?.(`[room] ${this.id} spoken request -> "${this.occupation}"`);
+    }
     if (r.ok) this.setBlueprint(r.blueprint, 'gemini');
     else this.fail(r.error || 'generation failed');
     return r;
@@ -67,6 +80,8 @@ export class Room {
     const demo = pickDemo(this.deps.demos, occupation ?? this.occupation);
     if (!demo) return { ok: false, error: 'no demo shifts available' };
     this.genToken++; // cancel any running generation
+    // A spoken request that never resolved has no real occupation yet: take the demo's.
+    if (this.spoken && this.occupation === SPOKEN_OCCUPATION) this.occupation = demo.occupation;
     this.setBlueprint(demo.blueprint, 'demo');
     return { ok: true, demo: demo.id };
   }
@@ -205,10 +220,11 @@ export class RoomManager {
     this.reaper.unref?.();
   }
 
-  create(occupation) {
+  /** @param {string} occupation  @param {{ audio?: { mimeType: string, data: string } }} [request] */
+  create(occupation, request = {}) {
     let id;
     do id = newId(6); while (this.rooms.has(id));
-    const room = new Room(id, occupation, this.deps);
+    const room = new Room(id, occupation, this.deps, request);
     this.rooms.set(id, room);
     room.genJob = room.startGeneration(this.deps.generator).catch((err) => room.fail(String(err?.message ?? err)));
     return room;

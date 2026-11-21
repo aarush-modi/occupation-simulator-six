@@ -33,7 +33,8 @@ export const Recipe = z.object({
   slots: z.array(z.object({ id: z.string(), pos: v3, accepts: z.array(z.string()).min(1) })).default([]),
   // Pressable controls. `requires` lists slot ids that must be filled first (F4 prerequisite check).
   // `sets` is a state tag applied to the item in the first required slot when pressed (e.g. "brewed").
-  controls: z.array(z.object({ id: z.string(), pos: v3, label: z.string(), requires: z.array(z.string()).default([]), sets: z.string().optional() })).default([]),
+  // `combine` makes the items in the other required slots part of the first one (e.g. stems + wrap -> bouquet).
+  controls: z.array(z.object({ id: z.string(), pos: v3, label: z.string(), requires: z.array(z.string()).default([]), sets: z.string().optional(), combine: z.boolean().optional() })).default([]),
   parts: z.array(Part).min(1).max(120),
 });
 

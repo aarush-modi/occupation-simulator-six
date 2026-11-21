@@ -9,6 +9,7 @@ import { KIND_GESTURES } from './world';
 import { Timing, Steady, PressHold } from '../game/Hud';
 import WebcamPanel from '../game/webcam/WebcamPanel';
 import { cam, GESTURE_HINT } from '../game/webcam/gestures';
+import { BODY_GESTURE_HINT } from '../game/webcam/pose';
 import { startAudio } from '../game/audio';
 
 export const ui = {
@@ -86,7 +87,7 @@ function Prompt() {
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <span style={{ background: ui.accent, color: '#111', fontWeight: 800, borderRadius: 4, padding: '1px 7px' }}>E</span>{label}
           </div>
-          {cam.enabled && g && <div style={{ fontSize: 12, color: ui.accent }}>Webcam: {GESTURE_HINT[g] ?? g}</div>}
+          {cam.enabled && g && <div style={{ fontSize: 12, color: ui.accent }}>Webcam: {(cam.mode === 'body' ? BODY_GESTURE_HINT : GESTURE_HINT)[g] ?? g}</div>}
         </div>
       )}
     </>

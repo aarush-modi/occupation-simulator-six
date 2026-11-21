@@ -3,9 +3,9 @@
 import { useShift } from './store';
 import { WS_BASE, BACKEND } from './world';
 import { blip, playAlarm, stopAlarm } from '../game/audio';
+import { pushSnap, samplePlayer, sampleNpc, INTERP_MS } from './interp';
 
-export const INTERP_MS = 110;
-const snaps = []; // { t, players }
+export { samplePlayer, sampleNpc, INTERP_MS };
 // Local pose, written by the first-person player every frame, sent at 20 Hz.
 export const localPose = { pos: [0, 0, 0], yaw: 0, pitch: 0, ready: false };
 // Set when the server puts us somewhere far from where we think we are (respawn, clamp); the player snaps to it.
@@ -79,12 +79,6 @@ function sendPose() {
   sentPoses.push({ t: performance.now(), pos });
   while (sentPoses.length && performance.now() - sentPoses[0].t > 1500) sentPoses.shift();
   send({ t: 'pose', pos, yaw: Math.round(localPose.yaw * 1000) / 1000, pitch: Math.round(localPose.pitch * 1000) / 1000 });
-}
-
-function pushSnap(state) {
-  if (!state?.players) return;
-  snaps.push({ t: performance.now(), players: state.players });
-  while (snaps.length > 30) snaps.shift();
 }
 
 function handle(msg) {
@@ -189,29 +183,6 @@ function onReview() {
 
 let deniedHandler = null;
 export function onDenied(cb) { deniedHandler = cb; }
-
-/** Interpolated pose of a player at render time. */
-export function samplePlayer(id, now = performance.now()) {
-  const t = now - INTERP_MS;
-  let a = null, b = null;
-  for (let i = snaps.length - 1; i >= 0; i--) {
-    if (snaps[i].t <= t) { a = snaps[i]; b = snaps[i + 1] ?? null; break; }
-  }
-  if (!a) a = snaps[0];
-  const pa = a?.players?.[id];
-  if (!pa) return null;
-  const pb = b?.players?.[id];
-  if (!pb) return { pos: pa.pos, yaw: pa.yaw, pitch: pa.pitch ?? 0 };
-  const k = Math.min(1, Math.max(0, (t - a.t) / Math.max(1, b.t - a.t)));
-  let dy = pb.yaw - pa.yaw;
-  while (dy > Math.PI) dy -= Math.PI * 2;
-  while (dy < -Math.PI) dy += Math.PI * 2;
-  return {
-    pos: [pa.pos[0] + (pb.pos[0] - pa.pos[0]) * k, pa.pos[1] + (pb.pos[1] - pa.pos[1]) * k, pa.pos[2] + (pb.pos[2] - pa.pos[2]) * k],
-    yaw: pa.yaw + dy * k,
-    pitch: (pa.pitch ?? 0) + ((pb.pitch ?? 0) - (pa.pitch ?? 0)) * k,
-  };
-}
 
 // HTTP helpers
 export async function createRoom(occupation) {

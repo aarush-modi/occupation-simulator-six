@@ -6,7 +6,7 @@ import { memo, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useLabel } from './Labels';
 import { useShift } from './store';
-import { samplePlayer } from './net';
+import { samplePlayer, sampleNpc } from './net';
 import { getIndex } from './actions';
 import { restFrame, objectiveMarker, recipeOf, RECIPES } from './world';
 import { Prop, placeAt, Shell } from './scene';
@@ -48,26 +48,44 @@ function Outfit({ look }) {
   return null;
 }
 
+// NPC: drawn where the server's goal machine has walked them (interpolated), facing where they walk, the
+// station they are working at (repair), or the nearest player when they are standing at their post.
 function Npc({ npc }) {
-  const g = useRef();
-  const motion = useRef({ speed: 0, talk: false });
+  const g = useRef(), body = useRef();
+  const motion = useRef({ speed: 0, talk: false, point: false, carry: false });
   const look = useMemo(() => outfitProps(npc.outfit, hash(npc.id)), [npc]);
-  const { position, rotationY } = useMemo(() => placeAt(npc.anchor), [npc.anchor]);
-  useLabel(`npc:${npc.id}`, { pos: () => [position[0], 2.12, position[2]], title: npc.name, sub: npc.role });
+  const home = useMemo(() => placeAt(npc.anchor), [npc.anchor]);
+  const live = useRef([home.position[0], home.position[2]]);
+  useLabel(`npc:${npc.id}`, { pos: () => [live.current[0], 2.12, live.current[1]], title: npc.name, sub: npc.role });
   useFrame((state, dt) => {
-    if (!g.current) return;
-    const c = state.camera.position;
-    const dx = c.x - position[0], dz = c.z - position[2];
-    const target = Math.hypot(dx, dz) < 5 ? Math.atan2(dx, dz) : rotationY;
-    let d = target - g.current.rotation.y;
+    if (!g.current || !body.current) return;
+    const n = sampleNpc(npc.id);
+    const pos = n?.pos ?? live.current;
+    live.current = pos;
+    g.current.position.set(pos[0], 0, pos[1]);
+    const moving = !!n?.moving;
+    let target;
+    const st = n?.target && getIndex()?.stations[n.target];
+    if (moving) target = n.yaw;
+    else if ((n?.goal === 'repair' || n?.goal === 'guide') && st) target = Math.atan2(st.frame.pos[0] - pos[0], st.frame.pos[2] - pos[1]);
+    else {
+      const c = state.camera.position;
+      const dx = c.x - pos[0], dz = c.z - pos[1];
+      target = Math.hypot(dx, dz) < 5 ? Math.atan2(dx, dz) : home.rotationY;
+    }
+    let d = target - body.current.rotation.y;
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
-    g.current.rotation.y += d * Math.min(1, dt * 3);
-    motion.current.talk = useShift.getState().subtitle?.who === npc.name;
+    body.current.rotation.y += d * Math.min(1, dt * (moving ? 8 : 3));
+    const m = motion.current;
+    m.speed = THREE.MathUtils.damp(m.speed, moving ? 1.1 : 0, 8, dt);
+    m.talk = useShift.getState().subtitle?.who === npc.name;
+    m.point = !moving && n?.goal === 'guide';
+    m.carry = !moving && n?.goal === 'repair'; // hands forward, working on the machine
   });
   return (
-    <group position={position}>
-      <group ref={g} rotation-y={rotationY}>
+    <group ref={g} position={home.position}>
+      <group ref={body} rotation-y={home.rotationY}>
         <Humanoid {...look} motion={motion} />
         <Outfit look={look} />
       </group>
@@ -80,10 +98,8 @@ function RemotePlayer({ id, index }) {
   const motion = useRef({ speed: 0, carry: false });
   const last = useRef(null);
   const name = useShift((s) => s.state?.players?.[id]?.name ?? 'Player');
-  const heldProp = useShift((s) => {
-    const h = s.state?.players?.[id]?.held;
-    return h ? s.blueprint?.items?.find((i) => i.id === h)?.prop ?? null : null;
-  });
+  const heldId = useShift((s) => s.state?.players?.[id]?.held ?? null);
+  const heldProp = useShift((s) => (heldId ? s.blueprint?.items?.find((i) => i.id === heldId)?.prop ?? null : null));
   const recipe = heldProp ? recipeOf(heldProp, 'item') : null;
   useLabel(`player:${id}`, { pos: () => { const p = samplePlayer(id); return p ? [p.pos[0], 2.16, p.pos[2]] : null; }, title: name, sub: 'Teammate', color: PLAYER_COLORS[index % PLAYER_COLORS.length] });
   const look = useMemo(() => {
@@ -106,9 +122,26 @@ function RemotePlayer({ id, index }) {
     <group ref={g}>
       <group ref={body}>
         <Humanoid {...look} motion={motion} />
-        {recipe && <group position={[0, 1.0, 0.42]} scale={fit}><Prop recipe={recipe} /></group>}
+        {recipe && <group position={[0, 1.0, 0.42]} scale={fit}><ItemModel id={heldId} recipe={recipe} /></group>}
       </group>
     </group>
+  );
+}
+
+// An item and whatever was combined into it (e.g. wrap + stems = bouquet): parts stand inside the base item.
+export function ItemModel({ id, recipe }) {
+  const contains = useShift((s) => s.state?.items?.[id]?.contains?.join(',') ?? '');
+  const idx = getIndex();
+  const parts = contains ? contains.split(',').map((pid) => idx?.items[pid]?.recipe).filter(Boolean) : [];
+  return (
+    <>
+      <Prop recipe={recipe} />
+      {parts.map((r, i) => (
+        <group key={i} position={[(i - (parts.length - 1) / 2) * 0.045, 0.03 + i * 0.01, (i % 2 ? -1 : 1) * 0.015]} rotation={[0, 0, (i - (parts.length - 1) / 2) * 0.12]}>
+          <Prop recipe={r} />
+        </group>
+      ))}
+    </>
   );
 }
 
@@ -143,7 +176,7 @@ function Item({ id }) {
     g.current.rotation.y = rotY;
   });
   if (!recipe) return null;
-  return <group ref={g} position={init.pos} rotation-y={init.rotY}><Prop recipe={recipe} /></group>;
+  return <group ref={g} position={init.pos} rotation-y={init.rotY}><ItemModel id={id} recipe={recipe} /></group>;
 }
 
 const TAPE_R = new THREE.MeshStandardMaterial({ color: '#d4241a', roughness: 0.5, emissive: '#3a0500' });

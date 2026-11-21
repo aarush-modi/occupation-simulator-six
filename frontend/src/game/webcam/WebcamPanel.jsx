@@ -1,15 +1,21 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { cam, GESTURE_HINT } from './gestures';
-import { startTracking, stopTracking, getVideo, engine } from './tracker';
+import { BODY_GESTURE_HINT } from './pose';
+import { startTracking, stopTracking, getVideo, engine, setMode, loadSavedMode } from './tracker';
 
 const HAND_EDGES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
 const FACE_PTS = [10, 152, 234, 454, 1, 33, 263];
+// MediaPipe pose skeleton (torso, arms, hands, legs)
+const POSE_EDGES = [[11, 12], [11, 23], [12, 24], [23, 24], [11, 13], [13, 15], [12, 14], [14, 16], [15, 19], [15, 17], [16, 20], [16, 18], [23, 25], [25, 27], [24, 26], [26, 28], [27, 31], [28, 32]];
+const POSE_VIS = 0.5;
 
 export default function WebcamPanel() {
   const canvas = useRef();
   const [, tick] = useState(0);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => { loadSavedMode(); tick((x) => x + 1); }, []);
 
   useEffect(() => {
     let raf;
@@ -24,7 +30,19 @@ export default function WebcamPanel() {
       ctx.translate(W, 0); ctx.scale(-1, 1); // mirror like a selfie
       if (v && v.readyState >= 2) ctx.drawImage(v, 0, 0, W, H);
       const fr = cam.frame;
-      if (fr) {
+      if (fr?.pose) {
+        // full-body mode: skeleton over the video (the synthesised hands live in view space, not image space)
+        const lm = fr.pose;
+        const ok = (i) => lm[i] && (lm[i].visibility == null || lm[i].visibility >= POSE_VIS);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = cam.status === 'lost' ? '#ff6a5c' : '#3cff8a';
+        for (const [a, b] of POSE_EDGES) {
+          if (!ok(a) || !ok(b)) continue;
+          ctx.beginPath(); ctx.moveTo(lm[a].x * W, lm[a].y * H); ctx.lineTo(lm[b].x * W, lm[b].y * H); ctx.stroke();
+        }
+        ctx.fillStyle = '#f2b233';
+        for (const i of [0, 15, 16, 25, 26]) if (ok(i)) { ctx.beginPath(); ctx.arc(lm[i].x * W, lm[i].y * H, 3.5, 0, 7); ctx.fill(); }
+      } else if (fr) {
         ctx.lineWidth = 2;
         for (const hand of fr.hands) {
           ctx.strokeStyle = '#f2b233';
@@ -52,14 +70,41 @@ export default function WebcamPanel() {
   const g = cam.lastGesture && performance.now() - cam.lastGesture.t < 1500 ? cam.lastGesture.name : null;
   const statusColor = { tracking: '#3cff8a', calibrating: '#f2b233', loading: '#f2b233', lost: '#ff6a5c', error: '#ff6a5c', off: '#888' }[cam.status];
   const calibrating = cam.status === 'calibrating';
+  const body = cam.mode === 'body';
+  const b = cam.body;
+  const pickMode = async (m) => {
+    if (m === cam.mode || busy) return;
+    setBusy(true);
+    try { await setMode(m); } catch {}
+    setBusy(false);
+  };
+  const turnTxt = Math.abs(cam.turn) > 0.05 ? (cam.turn > 0 ? 'Turning left' : 'Turning right') : '';
+  const moveTxt = cam.forward > 0.05 ? (body ? 'Running' : 'Walking') : cam.forward < -0.05 ? 'Backing' : '';
 
   return (
     <>
       {calibrating && (
         <div style={{ position: 'absolute', left: '50%', top: '30%', transform: 'translateX(-50%)', padding: '16px 22px', background: 'rgba(12,12,14,0.85)', borderRadius: 10, color: '#fff', textAlign: 'center', border: '1px solid rgba(255,255,255,0.1)' }}>
           <div style={{ fontSize: 12, letterSpacing: 3, color: '#f2b233' }}>CALIBRATING</div>
-          <div style={{ fontSize: 18, fontWeight: 700, marginTop: 6 }}>Sit normally, look at the screen, hands down</div>
-          <div style={{ fontSize: 13, color: '#bbb', marginTop: 6 }}>Lean in to walk · lean back to step back · turn your head to look</div>
+          {body ? (
+            <>
+              <div style={{ fontSize: 18, fontWeight: 700, marginTop: 6 }}>Stand still, facing the screen, arms at your sides</div>
+              <div style={{ fontSize: 13, color: '#bbb', marginTop: 6 }}>Stand back so your shoulders, arms and hips are in the preview (legs optional)</div>
+              {cam.calibHint && <div style={{ fontSize: 13, color: '#ff8a7a', marginTop: 6 }}>{cam.calibHint}</div>}
+              <div style={{ height: 4, background: 'rgba(255,255,255,0.12)', borderRadius: 4, marginTop: 10, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${Math.round((cam.calibProgress ?? 0) * 100)}%`, background: '#f2b233' }} />
+              </div>
+              <div style={{ fontSize: 12, color: '#999', marginTop: 10, lineHeight: 1.6 }}>
+                Swing your arms (or run in place) to walk · twist your shoulders to turn · raise a hand to use what is highlighted<br />
+                lower both hands to put down · push a hand forward and hold to press · wave to talk
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 18, fontWeight: 700, marginTop: 6 }}>Sit normally, look at the screen, hands down</div>
+              <div style={{ fontSize: 13, color: '#bbb', marginTop: 6 }}>Lean in to walk · lean back to step back · turn your head to look</div>
+            </>
+          )}
         </div>
       )}
       <div style={{ position: 'absolute', right: 20, bottom: 20, width: 260, padding: 10, background: 'rgba(12,12,14,0.78)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: '#fff', pointerEvents: 'auto', fontSize: 12 }}>
@@ -75,14 +120,25 @@ export default function WebcamPanel() {
             </button>
           </span>
         </div>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+          {[['body', 'Full body'], ['seated', 'Seated']].map(([m, label]) => (
+            <button key={m} onClick={() => pickMode(m)} disabled={busy} style={{ ...btn, flex: 1, fontWeight: 600, background: cam.mode === m ? 'rgba(242,178,51,0.9)' : 'rgba(255,255,255,0.08)', color: cam.mode === m ? '#111' : '#ccc' }}>
+              {label}
+            </button>
+          ))}
+        </div>
         <canvas ref={canvas} width={240} height={180} style={{ width: 240, height: 180, borderRadius: 6, background: '#000', display: cam.enabled ? 'block' : 'none' }} />
         {cam.enabled && (
           <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', color: '#bbb' }}>
-            <span>Face {cam.face ? '✓' : '✗'} · Hands {cam.hands}{cam.debug?.onHead ? ` · on head ${cam.debug.onHead}` : ''}</span>
-            <span>{cam.forward > 0.05 ? 'Walking' : cam.forward < -0.05 ? 'Backing' : ''}{Math.abs(cam.turn) > 0.05 ? (cam.turn > 0 ? ' ← ' : ' → ') : ''}</span>
+            {body ? (
+              <span>{cam.status === 'lost' ? 'Body lost: step into view' : b?.visible ? `Body ✓${b.squat ? ' · Squat' : ''} · Hand ${b.raise === 'up' ? 'UP ✋' : b.raise === 'blocked: walking' ? 'up (stop walking first)' : 'down'}` : 'Body ✗'}</span>
+            ) : (
+              <span>Face {cam.face ? '✓' : '✗'} · Hands {cam.hands}{cam.debug?.onHead ? ` · on head ${cam.debug.onHead}` : ''}</span>
+            )}
+            <span>{[moveTxt, turnTxt].filter(Boolean).join(' · ')}</span>
           </div>
         )}
-        {g && <div style={{ marginTop: 6, color: '#f2b233', fontWeight: 700 }}>Gesture: {GESTURE_HINT[g] ?? g}</div>}
+        {g && <div style={{ marginTop: 6, color: '#f2b233', fontWeight: 700 }}>Gesture: {(body ? BODY_GESTURE_HINT[g] : null) ?? GESTURE_HINT[g] ?? g}</div>}
         {cam.error && <div style={{ marginTop: 6, color: '#ff8a7a' }}>{cam.error}</div>}
       </div>
     </>

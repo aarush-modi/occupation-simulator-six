@@ -29,7 +29,7 @@ const denied = (events) => events.find((e) => e.type === 'denied')?.reason ?? nu
 test('state is JSON-serialisable and has the contract shape', () => {
   const r = room();
   const json = JSON.parse(JSON.stringify(r.state));
-  assert.deepEqual(Object.keys(json).sort(), ['closed', 'cur', 'done', 'event', 'items', 'objectives', 'phase', 'players', 'score', 'startedAt'].sort());
+  assert.deepEqual(Object.keys(json).sort(), ['closed', 'cur', 'done', 'event', 'items', 'npcs', 'npcTick', 'objectives', 'phase', 'players', 'score', 'startedAt', 'stepSince'].sort());
   assert.deepEqual(json.items.cup1, { at: 'S1', holder: null, tags: ['cup', 'ceramic'] });
   assert.equal(json.players.a.held, null);
 });

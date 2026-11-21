@@ -7,3 +7,4 @@ out/
 logs/
 frontend/public/mediapipe/
 dev.log
+frontend/certificates/

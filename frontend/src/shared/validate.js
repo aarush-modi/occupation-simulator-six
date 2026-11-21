@@ -5,6 +5,7 @@
 import { Blueprint } from './schema.js';
 import { ANCHORS } from './layout.js';
 import { createRoom, applyIntent, tick, fits } from './sim.js';
+import { buildNav, standPoint, findPath, spawnPoint } from './nav.js';
 
 const SURFACES = Object.keys(ANCHORS).filter((id) => ANCHORS[id].kind === 'surface');
 const STATION_KINDS = ['station', 'furniture'];
@@ -158,6 +159,19 @@ export function checkBlueprint(input, catalog) {
   };
   tagFlow(bp.objectives, 'objective');
   if (afterIdx >= 0) tagFlow([...bp.objectives.slice(0, afterIdx + 1), ...bp.event.replaceRemaining], 'event objective');
+
+  // ---- reachability (F2): players can walk from the spawn to every station, item spot and NPC ----
+  if (!errors.length) {
+    const nav = buildNav(bp, recipes);
+    const from = spawnPoint();
+    const check = (target, who) => {
+      const to = standPoint(nav, target);
+      if (!to || !findPath(nav, from, to)) errors.push(`${who} is not reachable from the entrance (blocked by other props)`);
+    };
+    for (const st of bp.stations) check(st.id, `station ${st.id}`);
+    for (const it of bp.items) if (SURFACES.includes(it.anchor)) check(it.anchor, `item ${it.id} at ${it.anchor}`);
+    for (const n of bp.npcs) check(n.anchor, `npc ${n.id}`);
+  }
 
   // ---- play it: the full list without the event, then with the event ----
   if (!errors.length) {

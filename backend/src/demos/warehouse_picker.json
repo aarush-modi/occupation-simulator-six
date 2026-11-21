@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "occupation": "warehouse picker",
+  "title": "Afternoon Wave at the Put Wall",
+  "briefing": "You are picking the afternoon wave in a fulfilment centre. Scan each pick location on rack A, pick the item and sort it into the right order bin on the put wall.",
+  "shell": "warehouse",
+  "stations": [
+    { "id": "rackA", "prop": "wh_pick_rack", "anchor": "N5", "label": "Rack A (aisle A)" },
+    { "id": "rackB", "prop": "wh_pick_rack", "anchor": "N1", "label": "Overflow rack B" },
+    { "id": "sort", "prop": "wh_sort_wall", "anchor": "E2", "label": "Put wall" }
+  ],
+  "items": [
+    { "id": "box", "prop": "gen_box_small", "anchor": "rackA.shelf_a", "label": "Small carton (SKU 4471)" },
+    { "id": "mailer", "prop": "wh_mailer", "anchor": "rackA.shelf_b", "label": "Poly mailer (SKU 2093)" },
+    { "id": "tote", "prop": "gen_plastic_crate", "anchor": "rackA.shelf_c", "label": "Storage tote (SKU 8810)" },
+    { "id": "box_b", "prop": "gen_box_small", "anchor": "rackB.shelf_a", "label": "Overflow carton (SKU 4471)" },
+    { "id": "mailer_b", "prop": "wh_mailer", "anchor": "rackB.shelf_b", "label": "Overflow mailer (SKU 2093)" },
+    { "id": "tote_b", "prop": "gen_plastic_crate", "anchor": "rackB.shelf_c", "label": "Overflow tote (SKU 8810)" }
+  ],
+  "decor": [
+    { "prop": "gen_metal_shelving_boxes", "anchor": "N2" },
+    { "prop": "gen_cardboard_box_stack", "anchor": "N3" },
+    { "prop": "gen_metal_shelving_boxes", "anchor": "N4" },
+    { "prop": "gen_safety_cones", "anchor": "I2" },
+    { "prop": "gen_wooden_crates", "anchor": "W1" },
+    { "prop": "gen_fire_extinguisher_stand", "anchor": "W2" },
+    { "prop": "gen_step_ladder", "anchor": "E1" }
+  ],
+  "npcs": [
+    {
+      "id": "dana", "name": "Dana", "role": "Shift lead", "anchor": "P3", "outfit": "hivis",
+      "lines": { "intro": "Three orders on this wave. Scan the location, pick it, and put it in the bin the light shows.", "done": "Wave closed on time. Nice picking!" }
+    },
+    {
+      "id": "marco", "name": "Marco", "role": "Forklift driver", "anchor": "P2", "outfit": "hivis",
+      "lines": { "intro": "Watch the aisles, I'm moving pallets this afternoon.", "done": "Aisle A is clear again. Good work." }
+    }
+  ],
+  "objectives": [
+    { "id": "checkin", "verb": "talk", "target": "dana", "label": "Get the pick list from Dana", "skill": "none" },
+    { "id": "scan_box", "verb": "press", "target": "rackA.scan_a", "label": "Scan location 01 on rack A", "skill": "none" },
+    { "id": "pick_box", "verb": "grab", "target": "box", "label": "Pick the small carton", "skill": "none" },
+    { "id": "put_box", "verb": "place", "target": "sort.bin_1", "item": "box", "label": "Put the carton in red bin 1 (order 1041)", "skill": "steady", "say": { "npc": "dana", "text": "Bin 1 is complete. Next, the mailer for order 1042." } },
+    { "id": "scan_mailer", "verb": "press", "target": "rackA.scan_b", "label": "Scan location 02 on rack A", "skill": "none" },
+    { "id": "pick_mailer", "verb": "grab", "target": "mailer", "label": "Pick the poly mailer", "skill": "none" },
+    { "id": "put_mailer", "verb": "place", "target": "sort.bin_2", "item": "mailer", "label": "Put the mailer in blue bin 2 (order 1042)", "skill": "steady", "say": { "npc": "dana", "text": "Good. Last pick is the tote for order 1043." } },
+    { "id": "scan_tote", "verb": "press", "target": "rackA.scan_c", "label": "Scan location 03 on rack A", "skill": "none" },
+    { "id": "pick_tote", "verb": "grab", "target": "tote", "label": "Pick the storage tote", "skill": "none" },
+    { "id": "put_tote", "verb": "place", "target": "sort.bin_3", "item": "tote", "label": "Put the tote in green bin 3 (order 1043)", "skill": "steady", "say": { "npc": "dana", "text": "That's the whole wave sorted." } }
+  ],
+  "event": {
+    "after": "put_mailer",
+    "delaySec": 4,
+    "announce": { "npc": "marco", "text": "Hold up! I dropped a pallet and my forklift is blocking aisle A. Pull the tote from overflow rack B. Dispatch moved order 1043 to the yellow bin 4, it's going out on the next truck." },
+    "close": "rackA",
+    "replaceRemaining": [
+      { "id": "scan_tote_b", "verb": "press", "target": "rackB.scan_c", "label": "Scan location 03 on overflow rack B", "skill": "none" },
+      { "id": "pick_tote_b", "verb": "grab", "target": "tote_b", "label": "Pick the tote from rack B", "skill": "none" },
+      { "id": "put_tote_b", "verb": "place", "target": "sort.bin_4", "item": "tote_b", "label": "Put the tote in yellow bin 4 (rerouted order 1043)", "skill": "steady", "say": { "npc": "dana", "text": "Good catch on the reroute. Close out the wave." } },
+      { "id": "close_wave", "verb": "press", "target": "sort.close", "label": "Close out the order at the put wall", "skill": "none", "say": { "npc": "marco", "text": "Truck's loading now. Thanks for working around me!" } }
+    ]
+  },
+  "facts": [
+    "Pickers in large fulfilment centres often walk 15 to 20 km per shift.",
+    "Scanning the location barcode before picking catches most mis-picks before they reach a customer.",
+    "A put wall lets one picker batch many orders at once and sort them into bins at the end.",
+    "Overflow or reserve locations hold extra stock so a blocked aisle doesn't stop the wave."
+  ]
+}

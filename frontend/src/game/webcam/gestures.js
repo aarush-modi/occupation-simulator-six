@@ -4,6 +4,7 @@
 export const cam = {
   enabled: false,
   calibrated: false,
+  mode: 'body', // body (full-body pose) | seated (face + hands)
   status: 'off', // off | loading | calibrating | tracking | lost | error
   error: null,
   face: false,
@@ -19,6 +20,11 @@ export const cam = {
 
 const listeners = new Set();
 export function onGesture(cb) { listeners.add(cb); return () => listeners.delete(cb); }
+// Shared by the seated (face + hands) engine and the full-body pose engine (pose.js).
+export function emitGesture(name, t) {
+  cam.lastGesture = { name, t };
+  for (const cb of listeners) cb(name);
+}
 
 export const TUNE = {
   leanFwd: 1.08, leanFwdFull: 1.22, leanBack: 0.92, leanBackFull: 0.82,
@@ -76,8 +82,7 @@ export function createGestureEngine(now = () => performance.now()) {
   function emit(name, t) {
     if (last[name] && t - last[name] < TUNE.cooldownMs) return;
     last[name] = t;
-    cam.lastGesture = { name, t };
-    for (const cb of listeners) cb(name);
+    emitGesture(name, t);
   }
   function held(name, cond, ms, t) {
     if (!cond) { delete holds[name]; return false; }
