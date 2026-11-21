@@ -82,17 +82,17 @@ export function createGestureEngine(now = () => performance.now()) {
   const pinching = new Set();
   let shoulders = null;
   let shoulderNeutral = null;
-  let prevFist = [false, false];
+  let prevFist = new Set();
   let prevRoll = null;
   let calibUntil = 0;
   const movement = createShoulderMovement();
   let wasMoving = false;
 
-  function emit(name, t) {
+  function emit(name, t, hand) {
     if (last[name] && t - last[name] < TUNE.cooldownMs) return;
     last[name] = t;
     cam.lastGesture = { name, t };
-    for (const cb of listeners) cb(name);
+    for (const cb of listeners) cb(name, hand);
   }
   function held(name, cond, ms, t) {
     if (!cond) { delete holds[name]; return false; }
@@ -113,6 +113,7 @@ export function createGestureEngine(now = () => performance.now()) {
       shoulders = null;
       shoulderNeutral = null;
       pinching.clear();
+      prevFist.clear();
       hist.length = 0;
       cam.guard = false;
       cam.moveUntil = 0;
@@ -121,10 +122,13 @@ export function createGestureEngine(now = () => performance.now()) {
     },
     get calibrating() { return !cam.calibrated; },
     base,
-    update(faceLm, handsLm, pose) {
+    update(faceLm, handsLm, pose, handSides = []) {
       const t = now();
       const face = faceLm ? faceFeatures(faceLm) : null;
-      const hands = (handsLm || []).map(handFeatures);
+      const hands = (handsLm || []).map((landmarks, index) => {
+        const h = handFeatures(landmarks);
+        return { ...h, side: handSides[index] ?? (h.center.x > (face?.cx ?? 0.5) ? 'left' : 'right') };
+      });
       cam.face = !!face;
       cam.hands = hands.length;
       if (pose !== undefined) {
@@ -182,15 +186,16 @@ export function createGestureEngine(now = () => performance.now()) {
         Math.abs(h.center.x - (face?.cx ?? 0.5)) < Math.max(0.19, fw * 1.6) &&
         h.center.y >= (face?.eyeY ?? 0.32) - 0.06 &&
         h.center.y <= (face ? face.chin + Math.max(0.18, face.height) : 0.76));
-      if (hands.some(h => h.fist && hist.some(sample => t - sample.t >= 90 && t - sample.t <= 230 &&
-        sample.hands.some(old => old.fist &&
+      const striking = hands.find(h => h.fist && hist.some(sample => t - sample.t >= 90 && t - sample.t <= 230 &&
+        sample.hands.some(old => old.fist && old.side === h.side &&
         Math.abs(old.center.x - h.center.x) < 0.15 && h.palm >= old.palm * 1.22 &&
-        h.palm - old.palm >= Math.max(0.012, fw * 0.10))))) emit('strike', t);
-      const pushing = hands.some((h) => h.open && h.palm / fw > TUNE.palmPush);
+        h.palm - old.palm >= Math.max(0.012, fw * 0.10))));
+      if (striking) emit('strike', t, striking.side);
+      const pushing = hands.find((h) => h.open && h.palm / fw > TUNE.palmPush);
       // discrete palmPush event once the push has been held briefly (continuous value stays in cam.palmPush)
-      if (pushing && held('palmPush', true, 250, t)) emit('palmPush', t);
+      if (pushing && held('palmPush', true, 250, t)) emit('palmPush', t, pushing.side);
       if (!pushing) delete holds.palmPush;
-      cam.palmPush = pushing;
+      cam.palmPush = Boolean(pushing);
 
       // wheel: roll delta of the first hand
       if (hands[0]) {
@@ -207,23 +212,23 @@ export function createGestureEngine(now = () => performance.now()) {
       // Thumb and index finger work at a range of distances. The wider release threshold filters jitter.
       const sides = new Set();
       for (const h of hands) {
-        const side = h.center.x >= (face?.cx ?? 0.5) ? 'right' : 'left';
+        const side = h.side;
         sides.add(side);
         if (!pinching.has(side) && !h.fist && h.pinch < 0.25) {
           pinching.add(side);
-          emit('pinch', t);
+          emit('pinch', t, side);
         } else if (pinching.has(side) && !h.fist && h.pinch > 0.45) {
           pinching.delete(side);
-          emit('unpinch', t);
+          emit('unpinch', t, side);
         }
       }
       for (const side of pinching) if (!sides.has(side)) pinching.delete(side);
 
       // fist snap (any hand goes from not-fist to fist)
-      hands.forEach((h, i) => { if (h.fist && !prevFist[i]) emit('fist', t); });
+      hands.forEach(h => { if (h.fist && !prevFist.has(h.side)) emit('fist', t, h.side); });
       // fist release: a hand that was a fist opens up again (let go of what it was holding)
-      hands.forEach((h, i) => { if (prevFist[i] && !h.fist && h.count >= 3) emit('release', t); });
-      prevFist = [hands[0]?.fist ?? false, hands[1]?.fist ?? false];
+      hands.forEach(h => { if (prevFist.has(h.side) && !h.fist && h.count >= 3) emit('release', t, h.side); });
+      prevFist = new Set(hands.filter(h => h.fist).map(h => h.side));
 
       if (face) {
         // A hand is "on the head" when its highest point (fingertips/knuckles) is above the hairline

@@ -172,6 +172,7 @@ function release(state, ctx, playerId, events) {
   const itemId = p.held;
   const it = state.items[itemId];
   p.held = null;
+  delete p.holdHand;
   if (it && it.holder === playerId) {
     it.holder = null;
     it.at = restingPlace(state, ctx, itemId);
@@ -292,6 +293,7 @@ function grab(s, ctx, playerId, p, intent, now, events) {
   it.holder = playerId;
   it.at = null;
   p.held = id;
+  if (intent.hand === 'left' || intent.hand === 'right') p.holdHand = intent.hand;
   events.push({ type: 'grabbed', playerId, item: id });
   progress(s, ctx, (o) => o.verb === 'grab' && o.target === id, intent.skillScore, now, events);
 }
@@ -316,6 +318,7 @@ function place(s, ctx, playerId, p, intent, now, events) {
   it.holder = null;
   it.at = target;
   p.held = null;
+  delete p.holdHand;
   events.push({ type: 'placed', playerId, item: id, target });
   progress(s, ctx, (o) => o.verb === 'place' && o.target === target && (!o.item || o.item === id), intent.skillScore, now, events);
 }
@@ -360,6 +363,7 @@ function handoff(s, ctx, playerId, p, intent, now, events) {
   if (q.held) return deny(events, playerId, 'their hands are full');
   const id = p.held;
   p.held = null;
+  delete p.holdHand;
   q.held = id;
   s.items[id].holder = to;
   events.push({ type: 'handoff', from: playerId, to, item: id });

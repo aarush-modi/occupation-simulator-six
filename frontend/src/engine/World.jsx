@@ -2,13 +2,14 @@
 // The generated workplace: shell + stations/decor at anchors, items at rest or carried, routed NPCs, remote
 // players as interpolated avatars, closed-station dressing, and markers for the current objective and focus.
 import * as THREE from 'three';
-import { memo, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useLabel } from './Labels';
 import { useShift } from './store';
-import { samplePlayer, sampleNpc } from './net';
+import { localPose, samplePlayer, sampleNpc } from './net';
 import { getIndex } from './actions';
-import { restFrame, objectiveMarker, recipeOf, RECIPES } from './world';
+import { restFrame, objectiveMarker, toWorld, RECIPES } from './world';
+import { handGrips } from './handGrips';
 import { Prop, placeAt, Shell } from './scene';
 import { Humanoid } from '../game/People';
 import { M } from '../game/materials';
@@ -52,8 +53,18 @@ function Outfit({ look }) {
 
 function Npc({ npc }) {
   const g = useRef();
-  const motion = useRef({ speed: 0, talk: false, work: false });
-  const look = useMemo(() => outfitProps(npc.outfit, hash(npc.id)), [npc.outfit, npc.id]);
+  const seed = hash(npc.id);
+  const motion = useRef({ speed: 0, talk: false, work: false, seed: (seed % 700) / 100 });
+  const workPoint = useMemo(() => new THREE.Vector3(), []);
+  const look = useMemo(() => outfitProps(npc.outfit, seed), [npc.outfit, seed]);
+  const station = getIndex()?.stations[npc.station];
+  const contact = useMemo(() => {
+    if (!station) return null;
+    const { frame, recipe } = station;
+    const feature = npc.action === 'inspect' ? recipe.controls?.[0]?.pos : recipe.slots?.[0]?.pos ?? recipe.controls?.[0]?.pos;
+    const [x, y, z] = feature ?? [0, recipe.size[1] * 0.85, 0];
+    return toWorld(frame, [x, THREE.MathUtils.clamp(y, 0.88, 1.52), Math.max(z, recipe.size[2] * 0.5 - 0.06)]);
+  }, [station, npc.action]);
   useLabel(`npc:${npc.id}`, {
     pos: () => g.current ? [g.current.position.x, 2.05, g.current.position.z] : null,
     title: npc.side ? `${npc.name} · ${npc.side === 'ally' ? 'Ally' : 'Rival'}` : npc.name,
@@ -68,11 +79,16 @@ function Npc({ npc }) {
     g.current.rotation.y += Math.atan2(Math.sin(diff), Math.cos(diff)) * Math.min(1, dt * 12);
     motion.current.speed = THREE.MathUtils.damp(motion.current.speed, state.speed, 10, dt);
     motion.current.work = state.mode === 'work' ? state.action : null;
+    motion.current.workPoint = null;
+    if (motion.current.work && contact && state.station === npc.station) {
+      workPoint.fromArray(contact);
+      motion.current.workPoint = g.current.worldToLocal(workPoint);
+    }
     motion.current.sparring = state.mode === 'sparring' ? state.action : null;
     motion.current.talk = state.mode === 'talk' || useShift.getState().subtitle?.who === npc.name;
-  });
+  }, -3);
   return (
-    <group ref={g} position={npc.pos} rotation-y={npc.yaw}>
+    <group ref={g}>
       <Humanoid {...look} motion={motion} boxing={npc.mode === 'sparring' ? M.coverallRed : null} />
       <Outfit look={look} />
     </group>
@@ -81,19 +97,16 @@ function Npc({ npc }) {
 
 function RemotePlayer({ id, index }) {
   const g = useRef(), body = useRef();
+  const left = useRef(), right = useRef();
   const motion = useRef({ speed: 0, carry: false });
   const last = useRef(null);
   const name = useShift((s) => s.state?.players?.[id]?.name ?? 'Player');
   const boxing = useShift((s) => s.state?.game?.kind === 'sparring');
-  const heldProp = useShift((s) => {
-    const h = s.state?.players?.[id]?.held;
-    return h ? s.blueprint?.items?.find((i) => i.id === h)?.prop ?? null : null;
-  });
-  const plated = useShift((s) => {
-    const held = s.state?.players?.[id]?.held;
-    return s.state?.items?.[held]?.tags?.includes('plated') ?? false;
-  });
-  const recipe = heldProp ? recipeOf(heldProp, 'item') : null;
+  useEffect(() => {
+    const anchors = { left: left.current, right: right.current };
+    handGrips.set(id, anchors);
+    return () => { if (handGrips.get(id) === anchors) handGrips.delete(id); };
+  }, [id]);
   useLabel(`player:${id}`, { pos: () => { const p = samplePlayer(id); return p ? [p.pos[0], 2.16, p.pos[2]] : null; }, title: name, sub: 'Teammate', color: PLAYER_COLORS[index % PLAYER_COLORS.length] });
   const look = useMemo(() => {
     const seed = hash(id);
@@ -107,17 +120,16 @@ function RemotePlayer({ id, index }) {
     const prev = last.current;
     const sp = prev && dt > 0 ? Math.hypot(p.pos[0] - prev[0], p.pos[2] - prev[2]) / dt : 0;
     motion.current.speed = THREE.MathUtils.damp(motion.current.speed, Math.min(sp / 2.2, 1.6), 8, dt);
-    motion.current.carry = !!recipe;
+    motion.current.carry = !!p.held;
+    motion.current.carrySide = p.holdHand;
     const game = useShift.getState().state?.game;
     motion.current.sparring = boxing ? (p.guard ? 'cover' : game.clock - (p.strikeAt ?? -Infinity) < 230 ? 'strike' : 'ready') : null;
     last.current = p.pos;
-  });
-  const fit = recipe ? Math.min(1, 0.45 / Math.max(...recipe.size)) : 1;
+  }, -3);
   return (
     <group ref={g}>
       <group ref={body}>
-        <Humanoid {...look} motion={motion} boxing={boxing ? M.fabricBlue : null} />
-        {recipe && <group position={[0, 1.0, 0.42]} scale={fit}><Prop recipe={recipe} plated={plated} /></group>}
+        <Humanoid {...look} motion={motion} grips={{ left, right }} boxing={boxing ? M.fabricBlue : null} />
       </group>
     </group>
   );
@@ -130,29 +142,58 @@ function Item({ id }) {
   const idx = getIndex();
   const recipe = idx?.items[id]?.recipe;
   const init = useMemo(() => restFrame(idx, useShift.getState().state?.items?.[id]?.at) ?? { pos: [0, -10, 0], rotY: 0 }, [idx, id]);
+  const move = useMemo(() => ({ key: null, elapsed: 0, from: new THREE.Vector3(), target: new THREE.Vector3(), pickupDelay: 0 }), []);
   useFrame((_, dt) => {
     const s = useShift.getState();
     const it = s.state?.items?.[id];
     if (!g.current || !it) return;
-    let target = null, rotY = 0;
+    const { target, from } = move;
+    const key = it.holder ? `hand:${it.holder}` : it.at;
+    let rotY;
     if (it.holder) {
-      // local holder: shown in first-person hands; remote holder: drawn by the avatar
-      g.current.visible = false;
-      return;
+      const player = s.state.players[it.holder];
+      if (!player) { g.current.visible = false; return; }
+      const pose = it.holder === s.you && localPose.ready ? localPose : samplePlayer(it.holder) ?? player;
+      const side = player.holdHand ?? 'right';
+      const grip = handGrips.get(it.holder)?.[side];
+      rotY = pose.yaw;
+      const sin = Math.sin(rotY), cos = Math.cos(rotY);
+      if (grip) grip.getWorldPosition(target);
+      else target.set(pose.pos[0] - sin * 0.43, 1.22, pose.pos[2] - cos * 0.43);
+      const forward = Math.min(0.17, recipe.size[2] * 0.42 + 0.016);
+      const inward = side === 'right' ? -0.040 : 0.040;
+      target.x += -sin * forward + cos * inward;
+      target.y -= recipe.size[1] * 0.46;
+      target.z += -cos * forward - sin * inward;
+    } else {
+      const f = restFrame(idx, it.at);
+      if (!f) { g.current.visible = false; return; }
+      target.fromArray(f.pos);
+      rotY = f.rotY;
     }
-    const f = restFrame(idx, it.at);
-    if (f) { target = f.pos; rotY = f.rotY; }
-    if (!target) { g.current.visible = false; return; }
-    const p = g.current.position;
-    const far = Math.hypot(p.x - target[0], p.y - target[1], p.z - target[2]) > 4 || !g.current.visible;
-    g.current.visible = true;
-    if (far) p.set(...target);
-    else {
-      p.x = THREE.MathUtils.damp(p.x, target[0], 12, dt);
-      p.y = THREE.MathUtils.damp(p.y, target[1], 12, dt);
-      p.z = THREE.MathUtils.damp(p.z, target[2], 12, dt);
+    const model = g.current;
+    if (!model.visible || move.key === null || model.position.distanceToSquared(target) > 16) {
+      model.position.copy(target);
+      move.elapsed = 1;
+    } else if (move.key !== key) {
+      from.copy(model.position);
+      move.elapsed = 0;
+      move.pickupDelay = it.holder && !move.key.startsWith('hand:') ? 0.06 : 0;
     }
-    g.current.rotation.y = rotY;
+    model.visible = true;
+    move.key = key;
+    move.elapsed += Math.min(dt, 0.05);
+    const duration = it.holder ? 0.30 : 0.24;
+    const travel = move.elapsed - move.pickupDelay;
+    if (travel < duration) {
+      const progress = Math.max(0, travel) / duration;
+      model.position.lerpVectors(from, target, THREE.MathUtils.smoothstep(progress, 0, 1));
+      if (it.holder) model.position.y += Math.sin(progress * Math.PI) * 0.055;
+    } else {
+      model.position.lerp(target, 1 - Math.exp(-26 * dt));
+    }
+    const delta = rotY - model.rotation.y;
+    model.rotation.y += Math.atan2(Math.sin(delta), Math.cos(delta)) * (1 - Math.exp(-18 * dt));
   });
   if (!recipe) return null;
   return <group ref={g} position={init.pos} rotation-y={init.rotY}><Prop recipe={recipe} plated={plated} /></group>;

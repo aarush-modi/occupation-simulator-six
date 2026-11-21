@@ -200,9 +200,9 @@ function Intro() {
   const set = useShift((s) => s.set);
   useEffect(() => onGesture((name) => {
     if (name !== 'wave' && name !== 'move') return;
-    startAudio();
+    startAudio({ workplace: true, outdoors: bp.venue?.enclosure === 'outdoor' || bp.venue?.enclosure === 'open_front' });
     set({ started: true });
-  }), [set]);
+  }), [set, bp.venue?.enclosure]);
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'radial-gradient(ellipse at center, rgba(10,10,12,0.35), rgba(10,10,12,0.85))', pointerEvents: 'auto' }}>
       <div style={{ textAlign: 'center', color: '#fff', maxWidth: 640, padding: 24 }}>

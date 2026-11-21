@@ -150,14 +150,14 @@ export class Room {
     if (!c.joined) return send(ws, { type: 'events', events: [{ type: 'denied', playerId: null, reason: 'not joined' }] });
     if (!this.state) return; // still generating: nothing to act on yet
     if (msg.t === 'talk' && !this.blueprint.npcs.some(npc => npc.id === msg.npc)) {
-      const line = this.crowd?.smallTalk(msg.npc, this.state.players[c.playerId]);
+      const line = this.crowd?.smallTalk(msg.npc, this.state.players[c.playerId], c.playerId);
       if (line) send(ws, { type: 'events', events: [{ type: 'say', npc: msg.npc, text: line }] });
       return;
     }
     const r = applyIntent(this.state, c.playerId, msg, now);
     this.state = r.state;
     if (msg.t === 'talk' && r.events.some(event => event.type === 'say')) {
-      this.crowd?.smallTalk(msg.npc, this.state.players[c.playerId]);
+      this.crowd?.smallTalk(msg.npc, this.state.players[c.playerId], c.playerId);
     }
     if (r.events.length) this.broadcast({ type: 'events', events: r.events });
   }

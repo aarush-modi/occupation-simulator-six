@@ -122,8 +122,12 @@ function loop() {
     }
     body = poseFrame;
   }
-  cam.frame = { face: faceLm, hands: handLm, body };
-  engine.update(faceLm, handLm, poseFrame);
+  const handSides = handLm.map((points, i) => {
+    const name = h.handedness?.[i]?.[0]?.categoryName?.toLowerCase();
+    return name === 'left' || name === 'right' ? name : points[0].x > 0.5 ? 'left' : 'right';
+  });
+  cam.frame = { face: faceLm, hands: handLm, handSides, handWorld: h.worldLandmarks, aspect: video.videoWidth / video.videoHeight, body };
+  engine.update(faceLm, handLm, poseFrame, handSides);
 }
 
 export function stopTracking() {

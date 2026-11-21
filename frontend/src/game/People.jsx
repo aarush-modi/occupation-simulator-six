@@ -1,6 +1,6 @@
 'use client';
 import * as THREE from 'three';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { M } from './materials';
 import { B, C, S } from './parts';
@@ -8,57 +8,141 @@ import { Hardhat } from './Rig';
 import { A, registerInteractable } from './world';
 import { useGame } from './store';
 import { talkRhodes } from './flow';
+import { solveElbow } from './handPose';
 
-// Procedural humanoid. motion.current = { speed, talk, point }
-// hat: material or null (no hard hat). hair: material for a hair cap when there is no hat. hands: glove/skin material.
-// pants: leg material (defaults to the outfit). Arms read motion.current.carry (both forearms forward).
-export function Humanoid({ outfit = M.coverallOrange, hat = M.hatYellow, motion, vest = true, hair = null, hands = M.glove, pants = null, skin = M.skin, boxing = null }) {
-  const lLeg = useRef(), rLeg = useRef(), lArm = useRef(), rArm = useRef(), torso = useRef(), head = useRef();
-  useFrame((st) => {
-    const t = st.clock.elapsedTime;
+const DOWN = new THREE.Vector3(0, -1, 0);
+const limb = () => ({
+  shoulder: new THREE.Vector3(), wrist: new THREE.Vector3(), target: new THREE.Vector3(),
+  elbow: new THREE.Vector3(), bend: new THREE.Vector3(),
+  axis: new THREE.Vector3(), pole: new THREE.Vector3(), direction: new THREE.Vector3(),
+});
+
+// The shoulder and elbow follow a fixed-length arm. Work motions can supply a target
+// in body space, so the same animation reaches the equipment in different venues.
+export function Humanoid({ outfit = M.coverallOrange, hat = M.hatYellow, motion, vest = true, hair = null, hands = M.glove, pants = null, skin = M.skin, boxing = null, grips }) {
+  const thighs = useRef([]), knees = useRef([]), shoulders = useRef([]), forearms = useRef([]), wrists = useRef([]);
+  const torso = useRef(), head = useRef(), eyes = useRef(), mouth = useRef();
+  const pose = useMemo(() => ({ arms: [limb(), limb()], torsoInv: new THREE.Matrix4(), stride: 0, seed: null, speed: 0 }), []);
+  useFrame(({ clock }, delta) => {
+    const dt = Math.min(delta, 0.05);
     const m = motion?.current ?? {};
-    const sp = m.speed ?? 0;
-    const ph = t * (4 + sp * 2.5);
-    const sw = Math.min(sp, 1.5) * 0.55;
-    if (lLeg.current) lLeg.current.rotation.x = Math.sin(ph) * sw;
-    if (rLeg.current) rLeg.current.rotation.x = -Math.sin(ph) * sw;
-    const reach = m.work === 'stock' ? -1.1 : m.work === 'inspect' ? -0.62 : -0.91;
-    const handMotion = m.work === 'prepare' ? 0.25 : m.work === 'inspect' ? 0.1 : 0.17;
-    if (lArm.current) lArm.current.rotation.x = m.carry ? -1.1 : m.work ? reach + Math.sin(t * 4.6) * handMotion : -Math.sin(ph) * sw * 0.8 + (m.talk ? Math.sin(t * 3) * 0.15 - 0.3 : 0);
-    if (rArm.current) rArm.current.rotation.x = m.carry ? -1.1 : m.work ? reach - 0.15 + Math.sin(t * 4.6 + Math.PI) * handMotion : m.point ? -1.5 : Math.sin(ph) * sw * 0.8 + (m.talk ? Math.sin(t * 2.3 + 1) * 0.2 - 0.4 : 0);
-    if (m.sparring && lArm.current && rArm.current) {
-      lArm.current.rotation.x = m.sparring === 'cover' ? -1.92 : -1.06 + Math.sin(t * 5) * 0.08;
-      rArm.current.rotation.x = m.sparring === 'strike' ? -1.68 : m.sparring === 'windup' ? 0.39 : m.sparring === 'cover' ? -1.92 : -0.89;
-      lArm.current.rotation.z = -0.24;
-      rArm.current.rotation.z = 0.24;
+    const damp = (a, b, rate = 11) => THREE.MathUtils.damp(a, b, rate, dt);
+    if (pose.seed == null) pose.seed = m.seed ?? (torso.current.id % 13) * 0.64;
+    const t = clock.elapsedTime + pose.seed;
+    const sp = pose.speed = damp(pose.speed, m.speed ?? 0, 7);
+    pose.stride += dt * (3.3 + sp * 3.2);
+    const swing = Math.min(sp, 1.5) * 0.47;
+    const step = Math.sin(pose.stride);
+    for (let i = 0; i < 2; i++) {
+      const legStep = i === 0 ? step : -step;
+      thighs.current[i].rotation.x = -legStep * swing;
+      knees.current[i].rotation.x = Math.max(0, -legStep) * swing * 1.50 + swing * 0.09;
     }
-    if (torso.current) torso.current.position.y = 1.02 + Math.sin(t * 1.6) * 0.008 + Math.abs(Math.sin(ph)) * sw * 0.04;
-    if (head.current) head.current.rotation.y = m.talk ? Math.sin(t * 1.3) * 0.15 : 0;
-  });
+    const twist = m.work ? -0.12 : step * swing * 0.23;
+    torso.current.position.set(step * swing * 0.06, 1.00 + Math.abs(step) * swing * 0.035 + Math.sin(t * 1.6) * 0.006, 0);
+    torso.current.rotation.x = damp(torso.current.rotation.x, m.work ? 0.10 : sp * 0.065);
+    torso.current.rotation.y = damp(torso.current.rotation.y, twist);
+    torso.current.rotation.z = damp(torso.current.rotation.z, -step * swing * 0.12);
+    torso.current.updateMatrix();
+    pose.torsoInv.copy(torso.current.matrix).invert();
+
+    for (let i = 0; i < 2; i++) {
+      const sign = i ? 1 : -1;
+      const { shoulder, wrist, target, elbow, bend, axis, pole, direction } = pose.arms[i];
+      shoulder.set(sign * 0.215, 0.52, 0);
+      bend.set(sign * 0.74, -1, -0.15);
+      target.set(sign * (0.24 + Math.sin(t * 1.8 + i) * 0.012), -0.055 + swing * 0.12, sign * step * swing * 0.47);
+      if (m.sparring) {
+        const covering = m.sparring === 'cover';
+        target.set(sign * (covering ? 0.14 : 0.27), covering ? 0.60 : 0.42, covering ? 0.29 : 0.30);
+        if (i === 1 && m.sparring === 'windup') target.set(0.30, 0.40, -0.15);
+        if (i === 1 && m.sparring === 'strike') target.set(0.11, 0.55, 0.56);
+      } else if (m.carry && (m.carrySide ?? 'right') === (i ? 'left' : 'right')) {
+        target.set(sign * 0.17, 0.18, 0.38);
+      } else if (m.work) {
+        // A work cycle alternates effort and recovery. Each hand has different timing.
+        const beat = t * (m.work === 'stock' ? 3.8 : m.work === 'inspect' ? 2.7 : 5.2) + i * 0.84;
+        const effort = Math.pow(0.5 + 0.5 * Math.sin(beat), 2);
+        if (m.workPoint) {
+          target.copy(m.workPoint).applyMatrix4(pose.torsoInv);
+          target.x += sign * (i ? 0.015 : 0.14) + 0.025 * Math.sin(beat * 0.5);
+          target.y += (1 - effort) * 0.078 + (m.work === 'stock' ? 0.08 * effort : 0.014);
+          target.z -= (1 - effort) * (i ? 0.18 : 0.25);
+        } else {
+          target.set(sign * 0.21, 0.17 + effort * 0.12, 0.26 + effort * 0.18);
+        }
+      } else if (m.talk && i === 1) {
+        const gesture = Math.pow(0.5 + 0.5 * Math.sin(t * 3.1), 3);
+        target.set(0.24 + 0.065 * gesture, 0.16 + 0.18 * gesture, 0.18 + 0.16 * gesture);
+      } else if (m.point && i === 1) target.set(0.18, 0.47, 0.56);
+      if (wrist.lengthSq() === 0) wrist.copy(target);
+      wrist.lerp(target, 1 - Math.exp(-(m.sparring === 'strike' ? 24 : 11) * dt));
+      solveElbow(shoulder, wrist, elbow, bend, 0.30, 0.29, axis, pole);
+      shoulders.current[i].quaternion.setFromUnitVectors(DOWN, direction.copy(elbow).sub(shoulder).normalize());
+      forearms.current[i].position.copy(elbow);
+      forearms.current[i].quaternion.setFromUnitVectors(DOWN, direction.copy(wrist).sub(elbow).normalize());
+      wrists.current[i].position.copy(wrist);
+      wrists.current[i].rotation.x = damp(wrists.current[i].rotation.x, m.sparring ? -0.18 : m.work || m.carry ? 0.16 : 0.72);
+      wrists.current[i].rotation.z = -sign * 0.08;
+    }
+    head.current.rotation.x = damp(head.current.rotation.x, m.work ? 0.21 : m.talk ? Math.sin(t * 3.2) * 0.05 : 0.01);
+    head.current.rotation.y = damp(head.current.rotation.y, m.talk ? Math.sin(t * 1.15) * 0.09 : -torso.current.rotation.y * 0.50);
+    const blink = Math.max(0, 1 - Math.abs(t % 4.6 - 3.9) * 19);
+    eyes.current.scale.y = 1 - blink * 0.90;
+    mouth.current.scale.y = m.talk ? 0.45 + Math.abs(Math.sin(t * 11.8)) * 1.3 : 0.45;
+  }, -2);
   return (
     <group>
-      {[[-0.11, lLeg], [0.11, rLeg]].map(([x, ref], i) => (
-        <group key={i} ref={ref} position={[x, 0.92, 0]}>
-          <C rt={0.08} rb={0.07} h={0.82} p={[0, -0.42, 0]} m={pants ?? outfit} seg={12} />
-          <B s={[0.13, 0.11, 0.28]} p={[0, -0.86, 0.04]} m={M.black} round={0.03} />
+      {[-0.104, 0.104].map((x, i) => (
+        <group key={i} ref={node => { thighs.current[i] = node; }} position={[x, 0.874, 0]}>
+          <C rt={0.084} rb={0.066} h={0.404} p={[0, -0.20, 0]} m={pants ?? outfit} seg={12} />
+          <group ref={node => { knees.current[i] = node; }} position={[0, -0.413, 0]}>
+            <S rad={0.067} m={pants ?? outfit} seg={12} />
+            <C rt={0.066} rb={0.047} h={0.397} p={[0, -0.193, 0]} m={pants ?? outfit} seg={12} />
+            <B s={[0.131, 0.09, 0.242]} p={[0, -0.419, 0.045]} m={M.black} round={0.028} />
+            <B s={[0.138, 0.022, 0.248]} p={[0, -0.445, 0.046]} m={M.rubber} round={0.009} />
+          </group>
         </group>
       ))}
-      <group ref={torso} position={[0, 1.02, 0]}>
-        <B s={[0.4, 0.62, 0.24]} p={[0, 0.3, 0]} m={outfit} round={0.09} />
-        {vest && <B s={[0.42, 0.42, 0.26]} p={[0, 0.36, 0]} m={M.hivis} round={0.08} />}
-        {vest && <B s={[0.43, 0.04, 0.27]} p={[0, 0.28, 0]} m={M.chrome} />}
-        {[[-0.25, lArm], [0.25, rArm]].map(([x, ref], i) => (
-          <group key={i} ref={ref} position={[x, 0.56, 0]}>
-            <C rt={0.065} rb={0.055} h={0.62} p={[0, -0.31, 0]} m={outfit} seg={12} />
-            <B s={boxing ? [0.15, 0.18, 0.16] : [0.09, 0.12, 0.08]} p={[0, -0.66, 0]} m={boxing ?? hands} round={boxing ? 0.057 : 0.03} />
+      <group ref={torso} position={[0, 1.00, 0]}>
+        <B s={[0.338, 0.54, 0.223]} p={[0, 0.245, 0]} m={outfit} round={0.083} />
+        <S rad={0.19} p={[0, 0.43, 0]} scale={[1.12, 0.43, 0.61]} m={outfit} seg={16} />
+        <B s={[0.309, 0.145, 0.223]} p={[0, -0.048, 0]} m={pants ?? outfit} round={0.046} />
+        {vest && <B s={[0.371, 0.39, 0.245]} p={[0, 0.29, 0]} m={M.hivis} round={0.065} />}
+        {vest && <B s={[0.384, 0.041, 0.246]} p={[0, 0.205, 0]} m={M.chrome} />}
+        {['right', 'left'].map((side, i) => (
+          <group key={side}>
+            <group ref={node => { shoulders.current[i] = node; }} position={[i ? 0.215 : -0.215, 0.52, 0]}>
+              <S rad={0.06} m={outfit} seg={12} />
+              <C rt={0.062} rb={0.047} h={0.299} p={[0, -0.15, 0]} m={outfit} seg={12} />
+            </group>
+            <group ref={node => { forearms.current[i] = node; }}>
+              <S rad={0.048} m={outfit} seg={12} />
+              <C rt={0.049} rb={0.034} h={0.288} p={[0, -0.145, 0]} m={outfit} seg={12} />
+            </group>
+            <group ref={node => { wrists.current[i] = node; }}>
+              <group ref={grips?.[side]} position={[0, 0, 0.048]} />
+              <B s={boxing ? [0.125, 0.12, 0.16] : [0.064, 0.044, 0.096]} p={[0, 0, 0.033]} m={boxing ?? hands} round={boxing ? 0.05 : 0.02} />
+              {!boxing && <S rad={0.016} p={[(i ? -1 : 1) * 0.033, -0.008, 0.040]} scale={[0.7, 0.83, 1.55]} m={hands} seg={10} />}
+            </group>
           </group>
         ))}
-        <group ref={head} position={[0, 0.72, 0]}>
-          <C rt={0.05} h={0.1} p={[0, -0.05, 0]} m={skin} seg={10} />
-          <S rad={0.12} p={[0, 0.08, 0]} m={skin} seg={20} />
-          <B s={[0.16, 0.04, 0.02]} p={[0, 0.1, 0.11]} m={M.black} round={0.01} />
-          {hat && <Hardhat p={[0, 0.13, 0]} m={hat} s={0.95} />}
-          {!hat && hair && <S rad={0.127} p={[0, 0.1, -0.012]} m={hair} seg={20} scale={[1, 0.92, 1.02]} />}
+        <group ref={head} position={[0, 0.641, 0]}>
+          <C rt={0.048} rb={0.055} h={0.13} p={[0, -0.06, 0]} m={skin} seg={12} />
+          <S rad={0.115} p={[0, 0.067, 0.006]} m={skin} seg={20} scale={[0.89, 1.1, 0.92]} />
+          {[-1, 1].map(side => <S key={side} rad={0.024} p={[side * 0.097, 0.067, 0]} m={skin} seg={12} scale={[0.59, 1.13, 0.71]} />)}
+          <S rad={0.021} p={[0, 0.059, 0.104]} m={skin} seg={12} scale={[0.76, 1.06, 1.19]} />
+          <group ref={eyes} position-y={0.093}>
+            {[-1, 1].map(side => (
+              <group key={side} position={[side * 0.037, 0, 0.102]}>
+                <S rad={0.013} m={M.labCoat} seg={10} scale={[1.05, 0.57, 0.44]} />
+                <S rad={0.0068} p={[0, 0, 0.006]} m={M.black} seg={8} scale={[1, 0.88, 0.51]} />
+              </group>
+            ))}
+          </group>
+          <group ref={mouth} position={[0, 0.025, 0.103]}><S rad={0.015} m={M.fabricRed} seg={12} scale={[1.32, 0.41, 0.33]} /></group>
+          {hat && <Hardhat p={[0, 0.136, 0.007]} m={hat} s={0.92} />}
+          {!hat && hair && <S rad={0.107} p={[0, 0.115, -0.014]} m={hair} seg={18} scale={[1.01, 0.76, 1.03]} />}
         </group>
       </group>
     </group>

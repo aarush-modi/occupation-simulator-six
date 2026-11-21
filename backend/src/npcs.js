@@ -97,6 +97,7 @@ export class RoomCrowd {
     this.planner = planner;
     this.floor = makeFloor(blueprint, catalog);
     this.stations = new Map(blueprint.stations.map(station => [station.id, station]));
+    this.depths = new Map(catalog.map(recipe => [recipe.id, recipe.size[2]]));
     const challenge = blueprint.game?.kind === 'challenge' ? blueprint.game : null;
     const npcs = [...blueprint.npcs];
     const used = new Set(npcs.map(npc => npc.anchor));
@@ -137,13 +138,14 @@ export class RoomCrowd {
     }).catch(() => {}).finally(() => { this.activePlan = false; });
   }
 
-  smallTalk(id, player) {
+  smallTalk(id, player, playerId = null) {
     const actor = this.actors.find(npc => npc.id === id);
     if (!actor || !player || distance(actor.pos, player.pos) > 3) return null;
     actor.mode = 'talk';
     actor.yaw = yawToward(actor.pos, player.pos);
     actor.activity = 'Talking';
     actor.talkTo = null;
+    actor.audience = playerId;
     actor.path = [];
     actor.speed = 0;
     actor.station = null;
@@ -152,8 +154,8 @@ export class RoomCrowd {
   }
 
   snapshot() {
-    return Object.fromEntries(this.actors.map(({ id, name, role, side, outfit, pos, yaw, speed, mode, activity, action }) =>
-      [id, { id, name, role, side, outfit, pos: [...pos], yaw, speed, mode, activity, action }]));
+    return Object.fromEntries(this.actors.map(({ id, name, role, side, outfit, pos, yaw, speed, mode, activity, action, station }) =>
+      [id, { id, name, role, side, outfit, pos: [...pos], yaw, speed, mode, activity, action, station }]));
   }
 
   rivalStation() {
@@ -172,6 +174,10 @@ export class RoomCrowd {
     const events = [];
     for (const actor of this.actors) {
       actor.speed = 0;
+      if (actor.mode === 'talk' && actor.audience) {
+        const listener = state.players[actor.audience];
+        if (listener && distance(listener.pos, actor.pos) < 3) actor.yaw = yawToward(actor.pos, listener.pos);
+      }
       if (actor.station && state.closed.includes(actor.station)) {
         actor.path = [];
         actor.until = 0;
@@ -200,6 +206,7 @@ export class RoomCrowd {
           actor.greeted.add(actor.talkTo);
           const line = this.plans.get(actor.id)?.line || actor.lines?.intro || 'Hi! Let me know if you need a hand.';
           events.push({ type: 'say', npc: actor.id, playerId: actor.talkTo, text: line });
+          actor.audience = actor.talkTo;
           actor.talkTo = null; actor.path = []; actor.mode = 'talk'; actor.activity = 'Talking'; actor.until = now + 3500;
         }
       }
@@ -232,14 +239,16 @@ export class RoomCrowd {
         if (actor.station) actor.yaw = yawToward(actor.pos, ANCHORS[this.stations.get(actor.station).anchor].pos);
       }
       if (actor.until > now || actor.talkTo) continue;
+      actor.audience = null;
 
       const open = [...this.stations.values()].filter(s => !state.closed.includes(s.id));
       const plan = this.plans.get(actor.id);
       const work = (actor.visits++ % 2 === 0 && open.find(s => s.id === plan?.station)) || open[(actor.visits + actor.index) % open.length];
       const action = plan?.action ?? actions[(actor.visits + actor.index) % actions.length];
       const spot = work && ANCHORS[work.anchor];
+      const offset = (this.depths.get(work?.prop) ?? 0.9) / 2 + 0.58;
       const target = spot
-        ? [spot.pos[0] + Math.sin(spot.rotY) * 1.27 + (actor.index - 0.5) * 0.25, 0, spot.pos[2] + Math.cos(spot.rotY) * 1.27]
+        ? [spot.pos[0] + Math.sin(spot.rotY) * offset + Math.cos(spot.rotY) * (actor.index - 0.5) * 0.22, 0, spot.pos[2] + Math.cos(spot.rotY) * offset - Math.sin(spot.rotY) * (actor.index - 0.5) * 0.22]
         : ANCHORS[actor.anchor].pos;
       const destination = this.floor.snap(target);
       actor.path = this.floor.path(actor.pos, destination);

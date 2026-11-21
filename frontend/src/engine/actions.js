@@ -15,6 +15,7 @@ export function getIndex() {
 
 let lastIt = null;
 export let lastGrabAt = 0;
+export let latestHandAction = null;
 
 onDenied((reason) => {
   const idx = getIndex();
@@ -23,10 +24,14 @@ onDenied((reason) => {
 });
 
 /** Send an intent as-is (also the debug hook's `act`). */
-export function act(intent, it = null) {
+export function act(intent, it = null, side) {
   lastIt = it ?? inferInteractable(intent);
   if (intent.t === 'grab') lastGrabAt = performance.now();
-  return send(intent);
+  const sent = send(side ? { ...intent, hand: side } : intent);
+  if (sent && it?.pos && ['grab', 'place', 'press', 'handoff'].includes(intent.t)) {
+    latestHandAction = { side: side ?? 'right', kind: intent.t, target: [...it.pos], time: performance.now() };
+  }
+  return sent;
 }
 
 function inferInteractable(intent) {
@@ -43,7 +48,7 @@ const SKILLS = {
 };
 
 /** Use the focused interactable. */
-export function use(it) {
+export function use(it, side) {
   const s = useShift.getState();
   if (!it || !s.state || s.state.phase !== 'play' || s.skill) return;
   const obj = s.state.objectives[s.state.cur];
@@ -56,13 +61,13 @@ export function use(it) {
       skill: {
         ...skill,
         onDone: (score) => {
-          act({ ...it.intent, skillScore: Math.max(0, Math.min(1, score ?? 0)) }, it);
+          act({ ...it.intent, skillScore: Math.max(0, Math.min(1, score ?? 0)) }, it, side);
         },
       },
     });
     return;
   }
-  act(it.intent, it);
+  act(it.intent, it, side);
 }
 
 export function closeSkill(result) {

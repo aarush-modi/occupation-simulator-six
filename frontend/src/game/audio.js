@@ -9,16 +9,23 @@ function noiseBuffer(c, seconds = 2) {
   return b;
 }
 
-export function startAudio() {
-  if (ctx) return;
+export function startAudio({ workplace = false, outdoors = false } = {}) {
+  if (ctx) {
+    if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
+    return;
+  }
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   ctx = new AC();
   master = ctx.createGain(); master.gain.value = 0.55; master.connect(ctx.destination);
+  if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
 
-  // wind + ocean: brown noise through filters with slow LFO
+  // A low room tone for indoor venues, or a soft breeze in open venues.
   const buf = noiseBuffer(ctx, 4);
-  for (const [freq, gain, lfoRate] of [[420, 0.35, 0.07], [160, 0.5, 0.11]]) {
+  const layers = workplace
+    ? outdoors ? [[500, 0.12, 0.19], [235, 0.10, 0.08]] : [[260, 0.11, 0.05]]
+    : [[420, 0.35, 0.07], [160, 0.5, 0.11]];
+  for (const [freq, gain, lfoRate] of layers) {
     const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
     const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq;
     const g = ctx.createGain(); g.gain.value = gain;
@@ -29,6 +36,7 @@ export function startAudio() {
     src.start(); lfo.start();
   }
 
+  if (workplace) return;
   // diesel engine hum
   engineOsc = ctx.createOscillator(); engineOsc.type = 'sawtooth'; engineOsc.frequency.value = 46;
   const ef = ctx.createBiquadFilter(); ef.type = 'lowpass'; ef.frequency.value = 180;
@@ -64,6 +72,27 @@ export function blip(freq = 880, dur = 0.06, vol = 0.08, type = 'sine') {
   const g = ctx.createGain(); g.gain.value = vol;
   g.gain.setTargetAtTime(0, ctx.currentTime + dur * 0.6, dur * 0.3);
   o.connect(g).connect(master); o.start(); o.stop(ctx.currentTime + dur * 2);
+}
+
+export function contactSound(kind, tags = []) {
+  if (!ctx) return;
+  const hard = tags.some(tag => ['metal', 'ceramic', 'glass', 'tool'].includes(tag));
+  const press = kind === 'pressed';
+  const pickup = kind === 'grabbed' || kind === 'handoff';
+  const now = ctx.currentTime;
+  const duration = pickup ? 0.05 : 0.10;
+  const noise = ctx.createBufferSource();
+  noise.buffer = noiseBuffer(ctx, duration);
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = press ? 2400 : hard ? 1800 : 650;
+  filter.Q.value = hard ? 1.6 : 0.85;
+  const level = ctx.createGain();
+  level.gain.setValueAtTime(pickup ? 0.10 : 0.23, now);
+  level.gain.exponentialRampToValueAtTime(0.001, now + duration);
+  noise.connect(filter).connect(level).connect(master);
+  noise.start();
+  if (hard && !pickup && !press) blip(tags.includes('ceramic') ? 1270 : 920, 0.045, 0.026, 'triangle');
 }
 
 let lastStep = 0;

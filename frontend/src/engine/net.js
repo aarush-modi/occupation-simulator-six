@@ -2,7 +2,7 @@
 // Keeps a short snapshot buffer so remote players can be rendered ~100 ms in the past and interpolated.
 import { useShift } from './store';
 import { WS_BASE, BACKEND } from './world';
-import { blip, playAlarm, stopAlarm } from '../game/audio';
+import { blip, contactSound, playAlarm, stopAlarm } from '../game/audio';
 
 export const INTERP_MS = 110;
 const snaps = []; // { t, players, people }
@@ -173,8 +173,8 @@ function onEvent(ev) {
     case 'denied':
       if (ev.playerId === s.you) deniedHandler?.(ev.reason);
       break;
-    case 'grabbed': case 'placed': case 'handoff':
-      if (ev.playerId === s.you || ev.from === s.you || ev.to === s.you) blip(ev.type === 'grabbed' ? 520 : 640, 0.05, 0.07, 'triangle');
+    case 'grabbed': case 'placed': case 'handoff': case 'pressed':
+      if (ev.playerId === s.you || ev.from === s.you || ev.to === s.you) contactSound(ev.type, s.state?.items?.[ev.item]?.tags);
       if (ev.type === 'handoff' && ev.to === s.you) s.toastMsg(`${s.state?.players?.[ev.from]?.name ?? 'Teammate'} handed you ${labelOfItem(ev.item)}`, 'info');
       break;
     case 'review':

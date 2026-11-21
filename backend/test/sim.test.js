@@ -59,7 +59,8 @@ test('single hold: an item has one holder and a player holds one item', () => {
 
 test('handoff moves the item to a player with free hands', () => {
   const r = room();
-  r.act('a', { t: 'grab', item: 'cup1' });
+  r.act('a', { t: 'grab', item: 'cup1', hand: 'left' });
+  assert.equal(r.state.players.a.holdHand, 'left');
   r.act('b', { t: 'grab', item: 'cup2' });
   assert.equal(denied(r.act('a', { t: 'handoff', to: 'b' })), 'their hands are full');
   r.act('b', { t: 'place', item: 'cup2', target: 'S3' });
@@ -67,6 +68,7 @@ test('handoff moves the item to a player with free hands', () => {
   assert.equal(r.state.items.cup1.holder, 'b');
   assert.equal(r.state.players.b.held, 'cup1');
   assert.equal(r.state.players.a.held, null);
+  assert.equal(r.state.players.a.holdHand, undefined);
 });
 
 test('objectives complete only in order', () => {

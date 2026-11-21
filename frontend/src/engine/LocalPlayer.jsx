@@ -8,10 +8,8 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useShift } from './store';
 import { localPose, reconcile, samplePlayer, sampleNpc, send } from './net';
 import { use, getIndex, lastGrabAt } from './actions';
-import { staticInteractables, matchesObjective, KIND_GESTURES, anchorFrame, recipeOf, BOUNDS } from './world';
-import { Prop } from './scene';
-import { M } from '../game/materials';
-import { B } from '../game/parts';
+import { staticInteractables, matchesObjective, KIND_GESTURES, anchorFrame, BOUNDS } from './world';
+import TrackedHands from './TrackedHands';
 import { footstep } from '../game/audio';
 import { cam, onGesture, webcamPace } from '../game/webcam/gestures';
 import { clampToArena } from '../shared/gameRules';
@@ -56,10 +54,8 @@ export default function LocalPlayer({ colliders }) {
   const yaw = useRef(0), pitch = useRef(0);
   const pos = useRef(new THREE.Vector3());
   const vel = useRef(new THREE.Vector3());
-  const bob = useRef(0), stepAcc = useRef(0);
-  const hands = useRef();
-  const spawned = useRef(false);
-  const strikeAt = useRef(-Infinity);
+  const stepAcc = useRef(0);
+  const strike = useRef({ time: -Infinity, side: 'right' });
   const arena = useShift((s) => s.blueprint?.game?.arena);
 
   const key = useShift(interactKey);
@@ -79,13 +75,13 @@ export default function LocalPlayer({ colliders }) {
     yaw.current = f.rotY;
   }, [camera]);
 
-  useEffect(() => onGesture((name) => {
+  useEffect(() => onGesture((name, side) => {
     const s = useShift.getState();
     if (!s.started || s.state?.phase !== 'play' || s.skill) return;
     if (s.state.game?.kind === 'sparring') {
       const now = performance.now();
-      if ((name === 'strike' || name === 'fist') && now - strikeAt.current >= 550) {
-        strikeAt.current = now;
+      if ((name === 'strike' || name === 'fist') && now - strike.current.time >= 550) {
+        strike.current = { time: now, side: side ?? 'right' };
         send({ t: 'strike' });
       }
       return;
@@ -94,7 +90,8 @@ export default function LocalPlayer({ colliders }) {
     if (!f || !(KIND_GESTURES[f.kind] ?? []).includes(name)) return;
     // Opening the hand immediately after a grab finishes that gesture.
     if ((name === 'release' || name === 'unpinch') && performance.now() - lastGrabAt < 450) return;
-    use(f);
+    const releasing = f.kind === 'place' || f.kind === 'handoff';
+    use(f, releasing ? s.state.players[s.you]?.holdHand ?? 'right' : side);
   }), []);
 
   useFrame((_, dtRaw) => {
@@ -105,7 +102,6 @@ export default function LocalPlayer({ colliders }) {
       pos.current.set(reconcile.pos[0], 0, reconcile.pos[2]);
       vel.current.set(0, 0, 0);
       reconcile.pos = null;
-      spawned.current = true;
     }
     if (reconcile.yaw !== undefined && reconcile.yaw !== null) {
       yaw.current = reconcile.yaw; pitch.current = reconcile.pitch ?? 0;
@@ -120,18 +116,18 @@ export default function LocalPlayer({ colliders }) {
       yaw.current += cam.turn * dt;
       pitch.current = THREE.MathUtils.damp(pitch.current, cam.pitch, 5, dt);
     }
-    const speedTarget = pace === 2 ? 4.4 : pace === 1 ? 2.25 : 0;
+    const speedTarget = pace === 2 ? 3.85 : pace === 1 ? 1.75 : 0;
     const f = tmpV.set(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
-    vel.current.x = THREE.MathUtils.damp(vel.current.x, f.x * speedTarget, pace ? 14 : 21, dt);
-    vel.current.z = THREE.MathUtils.damp(vel.current.z, f.z * speedTarget, pace ? 14 : 21, dt);
+    vel.current.x = THREE.MathUtils.damp(vel.current.x, f.x * speedTarget, pace ? 9 : 17, dt);
+    vel.current.z = THREE.MathUtils.damp(vel.current.z, f.z * speedTarget, pace ? 9 : 17, dt);
+    const xBefore = pos.current.x, zBefore = pos.current.z;
     pos.current.addScaledVector(vel.current, dt);
     collide(pos.current, colliders);
     if (arena) pos.current.set(...clampToArena(pos.current.toArray(), arena));
 
-    const speed = Math.hypot(vel.current.x, vel.current.z);
-    bob.current += speed * dt * 2.1;
-    stepAcc.current += speed * dt;
-    if (stepAcc.current > 0.75) { stepAcc.current = 0; footstep(); }
+    stepAcc.current += Math.hypot(pos.current.x - xBefore, pos.current.z - zBefore);
+    const stride = pace === 2 ? 1.10 : 0.73;
+    if (stepAcc.current >= stride) { stepAcc.current -= stride; footstep(); }
     camera.position.set(pos.current.x, EYE, pos.current.z);
     camera.rotation.set(pitch.current, yaw.current, 0);
 
@@ -139,29 +135,6 @@ export default function LocalPlayer({ colliders }) {
     localPose.yaw = yaw.current; localPose.pitch = pitch.current;
     localPose.guard = guard && !frozen;
     localPose.ready = !!s.you;
-
-    // first-person hands
-    if (hands.current) {
-      hands.current.position.copy(camera.position);
-      hands.current.quaternion.copy(camera.quaternion);
-      const sway = Math.sin(bob.current) * 0.01 * Math.min(speed / 3, 1);
-      const rig = hands.current.children[0];
-      rig.position.set(sway, -0.02 + Math.abs(sway) * 0.5, 0);
-      const hs = camOn ? cam.frame?.hands ?? [] : [];
-      const gestureAge = performance.now() - strikeAt.current;
-      const extension = gestureAge < 220 ? Math.sin(Math.PI * gestureAge / 220) * 0.37 : 0;
-      for (let i = 0; i < 2; i++) {
-        const h = rig.children[i];
-        if (!h) continue;
-        const tracked = hs.find((lm) => (i === 0 ? lm[0].x > 0.5 : lm[0].x <= 0.5));
-        const carry = held ? 0.13 : 0;
-        const tx = tracked ? (0.5 - tracked[9].x) * 0.9 : (i === 0 ? -0.24 + carry : 0.24 - carry);
-        const ty = tracked ? (0.5 - tracked[9].y) * 0.7 - 0.12 : held ? -0.27 : -0.34;
-        h.position.x = THREE.MathUtils.damp(h.position.x, tx, 14, dt);
-        h.position.y = THREE.MathUtils.damp(h.position.y, ty, 14, dt);
-        h.position.z = -0.5 - (i === 1 ? extension : 0);
-      }
-    }
 
     // focus picking
     let best = null, bestScore = -Infinity;
@@ -197,29 +170,7 @@ export default function LocalPlayer({ colliders }) {
       }
     }
     s.setFocus(best);
-  });
+  }, -3);
 
-  const heldId = useShift((s) => s.state?.players?.[s.you]?.held ?? null);
-  const heldProp = useShift((s) => (heldId ? s.blueprint?.items?.find((i) => i.id === heldId)?.prop : null));
-  const plated = useShift((s) => s.state?.items?.[heldId]?.tags?.includes('plated') ?? false);
-  const recipe = heldProp ? recipeOf(heldProp, 'item') : null;
-  const fit = recipe ? Math.min(1, 0.3 / Math.max(...recipe.size)) : 1;
-  return (
-    <group ref={hands}>
-      <group>
-        {[[-0.24, 0], [0.24, 1]].map(([x, i]) => (
-          <group key={i} position={[x, -0.34, -0.5]} rotation={[0.3, x > 0 ? -0.25 : 0.25, 0]}>
-            <B s={arena ? [0.15, 0.14, 0.18] : [0.075, 0.045, 0.13]} m={arena ? M.fabricBlue : M.skin} round={arena ? 0.06 : 0.022} />
-            {!arena && <B s={[0.03, 0.028, 0.07]} p={[x > 0 ? -0.05 : 0.05, 0.01, -0.045]} r={[0, x > 0 ? 0.6 : -0.6, 0]} m={M.skin} round={0.012} />}
-            <B s={[0.095, 0.075, 0.18]} p={[0, -0.005, 0.15]} m={M.fabricBlue} round={0.03} />
-          </group>
-        ))}
-        {recipe && (
-          <group position={[0, -0.3 - recipe.size[1] * fit * 0.35, -0.55]} rotation={[0.12, 0, 0]} scale={fit}>
-            <Prop recipe={recipe} plated={plated} />
-          </group>
-        )}
-      </group>
-    </group>
-  );
+  return <TrackedHands boxing={Boolean(arena)} strike={strike} />;
 }
