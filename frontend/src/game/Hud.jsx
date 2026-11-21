@@ -6,6 +6,7 @@ import { startAudio, blip } from './audio';
 import { cam, onGesture, GESTURE_HINT } from './webcam/gestures';
 import { BODY_GESTURE_HINT } from './webcam/pose';
 import WebcamPanel from './webcam/WebcamPanel';
+import { DIAL, dialInput } from './webcam/dial';
 import { gestureList } from './Player';
 import * as flow from './flow';
 const { triggerKick } = flow;
@@ -137,9 +138,10 @@ export function Timing({ skill, close }) {
 export function Steady({ skill, close }) {
   const [v, setV] = useState(skill.start ?? 0.75);
   const [held, setHeld] = useState(0);
+  const [turn, setTurn] = useState(null);
   const st = useRef({ v: skill.start ?? 0.75, vel: 0, held: 0, done: false });
   useEffect(() => {
-    cam.wheel = 0;
+    const dial = { neutral: null, side: null, seen: -Infinity };
     let raf, last = performance.now(), t0 = performance.now(), inBandTime = 0, total = 0;
     const loop = (t) => {
       const dt = Math.min((t - last) / 1000, 0.05); last = t;
@@ -147,15 +149,14 @@ export function Steady({ skill, close }) {
       if (s.done) return;
       const time = (t - t0) / 1000;
       const drift = (Math.sin(time * 1.3) * 0.6 + Math.sin(time * 2.9 + 1) * 0.4 + 0.25) * skill.drift;
-      const input = cam.wheel * 6;
-      cam.wheel = 0;
-      s.vel += (drift - input * 0.9) * dt * 2.2;
+      const input = dialInput(dial, cam.dial, t);
+      s.vel += (drift + input * DIAL.gain) * dt * 2.2;
       s.vel *= Math.pow(0.08, dt);
       s.v = Math.min(1, Math.max(0, s.v + s.vel * dt));
       const inBand = s.v >= skill.band[0] && s.v <= skill.band[1];
       total += dt; if (inBand) { inBandTime += dt; s.held += dt; } else s.held = Math.max(0, s.held - dt * 1.5);
       live.pressure = s.v;
-      setV(s.v); setHeld(s.held);
+      setV(s.v); setHeld(s.held); setTurn(cam.dial ? input : null);
       if (s.held >= skill.hold) {
         s.done = true;
         blip(1300, 0.15, 0.12);
@@ -168,6 +169,7 @@ export function Steady({ skill, close }) {
     return () => cancelAnimationFrame(raf);
   }, [skill, close]);
   const psi = Math.round(1500 + v * 4500);
+  const body = cam.mode === 'body';
   return (
     <>
       <Meter value={v} band={skill.band} label={skill.format ? skill.format(v) : `${psi.toLocaleString()} psi`} color={v > 0.72 ? '#ff3b2f' : '#f2b233'} />
@@ -175,6 +177,22 @@ export function Steady({ skill, close }) {
         <div style={{ width: `${(held / skill.hold) * 100}%`, height: '100%', background: '#3cff8a', transition: 'width 0.1s linear' }} />
       </div>
       <div style={{ marginTop: 6, color: '#aaa', fontSize: 12 }}>Hold in the green: {held.toFixed(1)} / {skill.hold}s</div>
+      {cam.enabled && (
+        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 14 }}>
+          <svg width="64" height="64" viewBox="-32 -32 64 64" aria-label="Handwheel tilt">
+            <circle r="27" fill="none" stroke={turn == null ? '#444' : '#f2b233'} strokeWidth="4" />
+            <g transform={`rotate(${(turn ?? 0) * 70})`}>
+              <line x1="-27" y1="0" x2="27" y2="0" stroke={turn == null ? '#444' : '#f2b233'} strokeWidth="4" strokeLinecap="round" />
+              <line x1="0" y1="0" x2="0" y2="-27" stroke={turn == null ? '#444' : '#f2b233'} strokeWidth="4" strokeLinecap="round" />
+            </g>
+          </svg>
+          <div style={{ fontSize: 13, color: '#ddd', lineHeight: 1.5, maxWidth: 330 }}>
+            {turn == null
+              ? <span style={{ color: '#ff8a7a' }}>{body ? 'Hold both hands out in front of your chest' : 'Hold one hand up, palm facing the camera'}</span>
+              : <>{body ? 'Tilt both hands like a steering wheel.' : 'Tilt your hand like turning a dial.'}<br />Clockwise raises the needle, counter-clockwise lowers it. Hold the tilt to keep it moving.</>}
+          </div>
+        </div>
+      )}
     </>
   );
 }

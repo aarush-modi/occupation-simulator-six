@@ -17,7 +17,7 @@ export const cam = {
   runUntil: 0,
   turn: 0, // rad/s, + = turn left
   pitch: 0, // target pitch (rad)
-  wheel: 0, // accumulated wheel input, consumed by skills
+  dial: null, // { side, roll } current tilt of the steering hand(s) in image radians, or null when not visible
   palmPush: false,
   guard: false,
   lastGesture: null,
@@ -48,7 +48,6 @@ export const TUNE = {
   pitchGain: 3.2, pitchMax: 0.7,
   fingerExt: 1.15, // tip-to-wrist vs pip-to-wrist ratio for an extended finger
   palmPush: 0.95, // palm length / face width when pushed toward the camera
-  wheelSign: -1,
   cooldownMs: 700,
 };
 
@@ -96,7 +95,6 @@ export function createGestureEngine(now = () => performance.now()) {
   let shoulders = null;
   let shoulderNeutral = null;
   let prevFist = new Set();
-  let prevRoll = null;
   let calibUntil = 0;
   const movement = createShoulderMovement();
   let wasMoving = false;
@@ -209,17 +207,10 @@ export function createGestureEngine(now = () => performance.now()) {
       if (!pushing) delete holds.palmPush;
       cam.palmPush = Boolean(pushing);
 
-      // wheel: roll delta of the first hand
-      if (hands[0]) {
-        const roll = hands[0].roll;
-        if (prevRoll != null) {
-          let dr = roll - prevRoll;
-          if (dr > Math.PI) dr -= Math.PI * 2;
-          if (dr < -Math.PI) dr += Math.PI * 2;
-          if (Math.abs(dr) < 0.6) cam.wheel += dr * TUNE.wheelSign;
-        }
-        prevRoll = roll;
-      } else prevRoll = null;
+      // dial: the current tilt of one hand (the right one when both are up). Skills compare it with the tilt
+      // they first saw, so a held tilt keeps turning the handwheel.
+      const dialHand = hands.find(h => h.side === 'right') ?? hands[0];
+      cam.dial = dialHand ? { side: dialHand.side, roll: dialHand.roll } : null;
 
       // Thumb and index finger work at a range of distances. The wider release threshold filters jitter.
       const sides = new Set();

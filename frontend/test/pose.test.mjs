@@ -45,7 +45,6 @@ function rig() {
   const got = [];
   const off = onGesture((n) => got.push(n));
   const step = (lm, frames = 1) => { for (let i = 0; i < frames; i++) { t += 1000 / FPS; eng.update(typeof lm === 'function' ? lm(t) : lm); } };
-  cam.wheel = 0;
   eng.calibrate();
   step(standing(), 50); // ~1.7 s standing still
   assert.equal(cam.calibrated, true);

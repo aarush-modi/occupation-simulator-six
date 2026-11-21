@@ -178,7 +178,7 @@ export function stopTracking() {
   cam.enabled = false;
   cam.calibrated = false;
   cam.movement = 'frame';
-  cam.moveUntil = 0; cam.runUntil = 0; cam.forward = 0; cam.turn = 0; cam.pitch = 0; cam.palmPush = false; cam.wheel = 0;
+  cam.moveUntil = 0; cam.runUntil = 0; cam.forward = 0; cam.turn = 0; cam.pitch = 0; cam.palmPush = false; cam.dial = null;
   cam.guard = false;
   cam.status = 'off';
 }

@@ -100,7 +100,7 @@ export function useChoke() {
     s.openSkill({
       type: 'steady',
       title: 'Choke manifold',
-      help: 'Turn your wrist to turn the handwheel. Keep the pressure needle in the green for 5 seconds.',
+      help: 'Keep the pressure needle in the green for 5 seconds.',
       band: [0.42, 0.58],
       hold: 5,
       drift: 0.22,
@@ -115,7 +115,7 @@ export function useChoke() {
     s.openSkill({
       type: 'steady',
       title: 'Bleed off through pump 2 line',
-      help: 'Pressure is surging. Turn your wrist to adjust the handwheel. Keep it in the green for 6 seconds.',
+      help: 'Pressure is surging. Keep it in the green for 6 seconds.',
       band: [0.4, 0.55],
       hold: 6,
       drift: 0.5,

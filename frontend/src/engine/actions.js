@@ -43,7 +43,7 @@ function inferInteractable(intent) {
 
 const SKILLS = {
   timing: (obj) => ({ type: 'timing', title: obj.label, help: 'Make a fist when the marker is in the green.', band: [0.56, 0.72], attempts: 3, hitMsg: 'Nailed it!', overMsg: 'Too late', underMsg: 'Too early' }),
-  steady: (obj) => ({ type: 'steady', title: obj.label, help: 'Turn your wrist to keep the marker in the green.', band: [0.42, 0.62], hold: 2.5, drift: 0.5, start: 0.8, format: (v) => `${Math.round(v * 100)}%` }),
+  steady: (obj) => ({ type: 'steady', title: obj.label, help: 'Keep the marker in the green.', band: [0.42, 0.62], hold: 2.5, drift: 0.5, start: 0.8, format: (v) => `${Math.round(v * 100)}%` }),
   hold: (obj) => ({ type: 'presshold', title: obj.label, help: 'Push your palm toward the camera and hold until the ring fills.', duration: 1.4 }),
 };
 

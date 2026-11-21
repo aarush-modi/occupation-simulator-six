@@ -10,7 +10,7 @@
 //   lift both hands   -> 'release'    (both wrists rise from the waist to above the shoulders)
 //   press and hold    -> 'palmPush' + cam.palmPush while held
 //   wave              -> 'wave'       (a hand above the shoulder swinging sideways)
-//   two hands level   -> cam.wheel    (roll of the wrist-to-wrist line, like holding a steering wheel)
+//   two hands level   -> cam.dial     (tilt of the wrist-to-wrist line, like holding a steering wheel)
 //   one / both hands held still above the head -> 'one' / 'two' (choice prompts)
 // A squat (hips dropping) and arm swing while running never emit 'fist'.
 import { cam, emitGesture } from './gestures.js';
@@ -57,8 +57,6 @@ export const POSE_TUNE = {
   moveWindowMs: 1000,
   // wave
   waveAmp: 0.12, waveRevs: 3, waveWindowMs: 1400,
-  // wheel
-  wheelSign: -1,
   cooldownMs: 700,
 };
 const T = POSE_TUNE;
@@ -178,7 +176,6 @@ export function createPoseEngine(now = () => performance.now()) {
   let raised = { l: false, r: false };
   let pressFired = false;
   let squatAt = -1e9;
-  let prevRoll = null;
   let wasMoving = false;
 
   function emit(name, t, side) {
@@ -193,7 +190,7 @@ export function createPoseEngine(now = () => performance.now()) {
   }
   function stop() {
     cam.forward = 0; cam.turn = 0; cam.palmPush = false; cam.pitch = 0; cam.guard = false; wasMoving = false;
-    steps.length = 0; armSteps.length = 0; hist.length = 0; legUp = 0; armUp = 0; yawS = 0; prevRoll = null;
+    steps.length = 0; armSteps.length = 0; hist.length = 0; legUp = 0; armUp = 0; yawS = 0; cam.dial = null;
     reaching = { l: false, r: false }; raised = { l: false, r: false }; pressFired = false;
     for (const k in holds) delete holds[k];
   }
@@ -364,15 +361,8 @@ export function createPoseEngine(now = () => performance.now()) {
       if (held('two', upL && upR, 450, t)) { delete holds.two; emit('two', t); }
       if (held('one', upL !== upR, 450, t)) { delete holds.one; emit('one', t); }
 
-      // wheel: roll of the wrist-to-wrist line while both hands are at chest height
-      if (chest(f.l) && chest(f.r)) {
-        const roll = Math.atan2(f.l.y - f.r.y, f.l.x - f.r.x);
-        if (prevRoll != null) {
-          const dr = roll - prevRoll;
-          if (Math.abs(dr) < 0.6) cam.wheel += dr * T.wheelSign;
-        }
-        prevRoll = roll;
-      } else prevRoll = null;
+      // dial: tilt of the wrist-to-wrist line while both hands are at chest height
+      cam.dial = chest(f.l) && chest(f.r) ? { side: 'both', roll: Math.atan2(f.l.y - f.r.y, f.l.x - f.r.x) } : null;
     },
   };
 }
