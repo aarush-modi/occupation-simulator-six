@@ -1,0 +1,59 @@
+frontend/src/game/People.jsx
+  s_65b34720428e01::t_db86b0fa65c76e 60,97,113
+  s_65b34720428e01::t_9e52477e6e4dfb 3,11,13-27,29-59,61-86,88-93,96,98-104,107-112,114-127,130-145
+frontend/src/game/audio.js
+  s_65b34720428e01::t_5139c7d332488d 12-16,21,23,25-28,39,77-95
+  s_65b34720428e01::t_30920f47c21343 96-97
+frontend/src/engine/actions.js
+  s_65b34720428e01::t_5a5c754fc2d5e9 18,27,30-34,51,64,70
+frontend/src/engine/LocalPlayer.jsx
+  s_65b34720428e01::t_2203c6082ffcd6 11-12,57-58,78,83-84,93-94,173,175
+  s_65b34720428e01::t_5139c7d332488d 119,121-123,128-130
+frontend/src/engine/TrackedHands.jsx
+  s_65b34720428e01::t_a1f037133d7890 1-13,15-28,30-38,40-64,66-76,78-88,90-93,95,97-106,111-143,145-166
+  s_65b34720428e01::t_d4d89d55fbc086 39,65,77,89,94,96
+  s_65b34720428e01::t_1e38127b40bf2a 14,29,107-110,144
+frontend/src/engine/World.jsx
+  s_65b34720428e01::t_7efb2d9764ea40 5,9,11-12,56-63,65-67,82-86,89,91,100,105-109,123-124,128,132
+  s_65b34720428e01::t_1e38127b40bf2a 145,181,187-189,192
+  s_65b34720428e01::t_db86b0fa65c76e 64,150-152,154-180,183-186,190-191,193,195-196
+backend/src/npcs.js
+  s_65b34720428e01::t_7efb2d9764ea40 100,157-158,249,251
+  s_65b34720428e01::t_1e38127b40bf2a 141,148,177-180,209,242
+backend/test/sim.test.js
+  s_65b34720428e01::t_4145d71f466c56 62-63,71
+frontend/src/shared/sim.js
+  s_65b34720428e01::t_5a5c754fc2d5e9 175,296,321,366
+frontend/src/game/handPose.js
+  s_65b34720428e01::t_6a73af0e682d2c 1-69
+frontend/test/handPose.test.mjs
+  s_65b34720428e01::t_4145d71f466c56 1-41
+frontend/src/game/webcam/tracker.js
+  s_65b34720428e01::t_a76764d1c97a60 125-130
+frontend/src/engine/net.js
+  s_65b34720428e01::t_5139c7d332488d 5,176-177
+frontend/src/engine/handGrips.js
+  s_65b34720428e01::t_5a5c754fc2d5e9 1-2
+frontend/src/engine/Hud.jsx
+  s_65b34720428e01::t_5139c7d332488d 203,205
+backend/src/rooms.js
+  s_65b34720428e01::t_1e38127b40bf2a 153,160
+frontend/src/game/webcam/gestures.js
+  s_65b34720428e01::t_a76764d1c97a60 85,91,95,116,125,128-131,189-190,192-194,196,198,215,219,222,228,230-231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a7403528ebffcc749a6dec3fc17c7b192efc219",
+  "prompts": {},
+  "sessions": {
+    "s_65b34720428e01": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ff54-7e69-7d53-bfbc-4bd6797073a3",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Jie Xuan Liu <baronliu1993@gmail.com>"
+    }
+  }
+}
