@@ -17,6 +17,8 @@ import { clampToArena } from '../shared/gameRules';
 export const EYE = 1.62;
 const RADIUS = 0.3;
 const REACH = 2.4;
+const BODY_REACH = 4.2; // full-body webcam: aim by body heading, so reach further
+const BODY_SPEED = 1.8; // full-body webcam: m/s at full arm-swing cadence (cam.forward = 1)
 const tmpV = new THREE.Vector3(), fwdV = new THREE.Vector3();
 
 export function collide(p, colliders) {
@@ -56,6 +58,7 @@ export default function LocalPlayer({ colliders }) {
   const vel = useRef(new THREE.Vector3());
   const stepAcc = useRef(0);
   const strike = useRef({ time: -Infinity, side: 'right' });
+  const assist = useRef(null); // full-body webcam aim-assist target [x, y, z]
   const arena = useShift((s) => s.blueprint?.game?.arena);
 
   const key = useShift(interactKey);
@@ -87,7 +90,9 @@ export default function LocalPlayer({ colliders }) {
       return;
     }
     const f = s.focus;
-    if (!f || !(KIND_GESTURES[f.kind] ?? []).includes(name)) return;
+    // Full-body mode: a raised hand or reach ('fist') uses whatever is highlighted, whatever its kind.
+    const universal = cam.mode === 'body' && name === 'fist';
+    if (!f || !(universal || (KIND_GESTURES[f.kind] ?? []).includes(name))) return;
     // Opening the hand immediately after a grab finishes that gesture.
     if ((name === 'release' || name === 'unpinch') && performance.now() - lastGrabAt < 450) return;
     const releasing = f.kind === 'place' || f.kind === 'handoff';
@@ -112,11 +117,25 @@ export default function LocalPlayer({ colliders }) {
     const pace = frozen || guard ? 0 : webcamPace();
     const held = s.state?.players?.[s.you]?.held ?? null;
     const camOn = cam.enabled && cam.calibrated;
+    const bodyMode = camOn && cam.mode === 'body';
     if (!frozen && camOn) {
       yaw.current += cam.turn * dt;
-      pitch.current = THREE.MathUtils.damp(pitch.current, cam.pitch, 5, dt);
+      // Full-body aim assist: there is no head pitch, so tilt the view toward the focused thing. When the player
+      // stands still and is not turning, ease the heading onto it so a rough torso turn is enough.
+      const tgt = bodyMode ? assist.current : null;
+      if (tgt) {
+        const dx = tgt[0] - pos.current.x, dz = tgt[2] - pos.current.z;
+        const hd = Math.max(0.3, Math.hypot(dx, dz));
+        pitch.current = THREE.MathUtils.damp(pitch.current, THREE.MathUtils.clamp(Math.atan2(tgt[1] - EYE, hd), -0.9, 0.5), 4, dt);
+        if (Math.abs(cam.turn) < 0.05 && Math.abs(cam.forward) < 0.05) {
+          let d = Math.atan2(-dx, -dz) - yaw.current;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          yaw.current += THREE.MathUtils.clamp(d * Math.min(1, dt * 2.5), -0.9 * dt, 0.9 * dt);
+        }
+      } else pitch.current = THREE.MathUtils.damp(pitch.current, cam.pitch, 5, dt);
     }
-    const speedTarget = pace === 2 ? 3.85 : pace === 1 ? 1.75 : 0;
+    const speedTarget = bodyMode ? (frozen || guard ? 0 : cam.forward * BODY_SPEED) : pace === 2 ? 3.85 : pace === 1 ? 1.75 : 0;
     const f = tmpV.set(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
     vel.current.x = THREE.MathUtils.damp(vel.current.x, f.x * speedTarget, pace ? 9 : 17, dt);
     vel.current.z = THREE.MathUtils.damp(vel.current.z, f.z * speedTarget, pace ? 9 : 17, dt);
@@ -141,15 +160,27 @@ export default function LocalPlayer({ colliders }) {
     if (!frozen && !arena) {
       camera.getWorldDirection(fwdV);
       const obj = s.state?.objectives?.[s.state.cur];
+      const hfx = -Math.sin(yaw.current), hfz = -Math.cos(yaw.current);
       const consider = (it) => {
         const dx = it.pos[0] - camera.position.x, dy = it.pos[1] - camera.position.y, dz = it.pos[2] - camera.position.z;
-        const dist = Math.hypot(dx, dy, dz);
-        if (dist > REACH + it.r) return;
-        const dot = (dx * fwdV.x + dy * fwdV.y + dz * fwdV.z) / Math.max(dist, 1e-3);
         const required = matchesObjective(obj, it);
-        const need = Math.cos(Math.min(0.62, Math.atan2(it.r + 0.22, dist) + (required ? 0.10 : 0)));
-        if (dot < need) return;
-        const score = dot * 2 - dist * 0.08 + (required ? 0.28 : 0);
+        let score;
+        if (bodyMode) {
+          // Full body: aim by body heading only, in a wide cone, with longer reach, strongly preferring the
+          // thing the current step needs.
+          const hd = Math.hypot(dx, dz);
+          if (hd > BODY_REACH + it.r) return;
+          const dot = (dx * hfx + dz * hfz) / Math.max(hd, 1e-3);
+          if (dot < Math.cos(required ? 0.9 : 0.55)) return;
+          score = dot * 2 - hd * 0.15 + (required ? 1.5 : 0);
+        } else {
+          const dist = Math.hypot(dx, dy, dz);
+          if (dist > REACH + it.r) return;
+          const dot = (dx * fwdV.x + dy * fwdV.y + dz * fwdV.z) / Math.max(dist, 1e-3);
+          const need = Math.cos(Math.min(0.62, Math.atan2(it.r + 0.22, dist) + (required ? 0.10 : 0)));
+          if (dot < need) return;
+          score = dot * 2 - dist * 0.08 + (required ? 0.28 : 0);
+        }
         if (score > bestScore) { bestScore = score; best = it; }
       };
       for (const it of staticsRef.current) consider(it);
@@ -170,6 +201,7 @@ export default function LocalPlayer({ colliders }) {
       }
     }
     s.setFocus(best);
+    assist.current = bodyMode && best ? best.pos : null;
   }, -3);
 
   return <TrackedHands boxing={Boolean(arena)} strike={strike} />;

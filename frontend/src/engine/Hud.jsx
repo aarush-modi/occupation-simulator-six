@@ -9,6 +9,7 @@ import { KIND_GESTURES } from './world';
 import { Timing, Steady, PressHold } from '../game/Hud';
 import WebcamPanel from '../game/webcam/WebcamPanel';
 import { cam, GESTURE_HINT, onGesture } from '../game/webcam/gestures';
+import { BODY_GESTURE_HINT } from '../game/webcam/pose';
 import { startAudio } from '../game/audio';
 
 export const ui = {
@@ -35,8 +36,8 @@ function SparringPanel({ bp, game }) {
   const rival = bp.npcs.find(npc => npc.id === bp.game.opponent);
   const action = game.opponent.action;
   const message = game.status === 'rest' ? 'Next round soon' : game.status === 'waiting' ? 'Waiting for the bell' :
-    action === 'windup' ? 'Incoming strike. Raise both open palms.' : action === 'cover' ? 'Rival is guarding. Wait for an opening.' :
-    'Raise your shoulders to close in. Make a fist to strike.';
+    action === 'windup' ? (cam.mode === 'body' ? 'Incoming strike.' : 'Incoming strike. Raise both open palms.') : action === 'cover' ? 'Rival is guarding. Wait for an opening.' :
+    cam.mode === 'body' ? 'Swing your arms to close in. Reach forward to strike.' : 'Raise your shoulders to close in. Make a fist to strike.';
   return (
     <section aria-label="Match scoreboard" style={{ position: 'absolute', top: 20, left: 20, width: 'min(380px, 55vw)', padding: '14px 16px', ...ui.panel, borderLeft: '3px solid #67acf7', color: '#fff' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13, color: '#d1d8e8' }}>
@@ -111,7 +112,8 @@ function Prompt() {
   const skill = useShift((s) => s.skill);
   const label = focus?.label;
   const g = focus ? KIND_GESTURES[focus.kind]?.[0] : null;
-  const hint = focus?.kind === 'press' ? 'Push an open palm or pinch' : GESTURE_HINT[g];
+  // Full-body mode: a raised hand uses whatever is highlighted.
+  const hint = cam.mode === 'body' ? BODY_GESTURE_HINT.fist : focus?.kind === 'press' ? 'Push an open palm or pinch' : GESTURE_HINT[g];
   return (
     <>
       <div style={{ position: 'absolute', left: '50%', top: '50%', width: 6, height: 6, marginLeft: -3, marginTop: -3, borderRadius: 6, background: label ? ui.accent : 'rgba(255,255,255,0.8)', boxShadow: '0 0 6px rgba(0,0,0,0.6)' }} />
@@ -203,13 +205,19 @@ function Intro() {
     startAudio({ workplace: true, outdoors: bp.venue?.enclosure === 'outdoor' || bp.venue?.enclosure === 'open_front' });
     set({ started: true });
   }), [set, bp.venue?.enclosure]);
+  // The start hint depends on the webcam mode, which the panel can switch at any time.
+  const [mode, setMode] = useState(cam.mode);
+  useEffect(() => {
+    const id = setInterval(() => setMode(cam.mode), 250);
+    return () => clearInterval(id);
+  }, []);
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'radial-gradient(ellipse at center, rgba(10,10,12,0.35), rgba(10,10,12,0.85))', pointerEvents: 'auto' }}>
       <div style={{ textAlign: 'center', color: '#fff', maxWidth: 640, padding: 24 }}>
         <div style={{ fontSize: 13, letterSpacing: 6, color: ui.accent, textTransform: 'uppercase' }}>Workshift · {bp.occupation}</div>
         <div style={{ fontSize: 50, fontWeight: 900, marginTop: 6, letterSpacing: -1, lineHeight: 1.05 }}>{bp.title}</div>
         <div style={{ fontSize: 17, color: '#d8d0c4', marginTop: 14, lineHeight: 1.5 }}>{bp.briefing}</div>
-        <div style={{ marginTop: 22, fontSize: 16, color: ui.accent }}>Raise both shoulders or wave to start</div>
+        <div style={{ marginTop: 22, fontSize: 16, color: ui.accent }}>{mode === 'body' ? 'Swing your arms or wave to start' : 'Raise both shoulders or wave to start'}</div>
       </div>
     </div>
   );

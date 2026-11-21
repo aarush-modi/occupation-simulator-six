@@ -74,6 +74,7 @@ test('raising both shoulders produces a start gesture and pinching still works w
   hand[8] = { x: 0.642, y: 0.543 };
   try {
     cam.enabled = true;
+    cam.mode = 'seated';
     engine.calibrate(0);
     for (; now < 500; now += 50) engine.update(null, [], upperBody());
     for (; now < 750; now += 50) engine.update(null, [], upperBody({ left: 0.045 }));
@@ -84,6 +85,7 @@ test('raising both shoulders produces a start gesture and pinching still works w
   } finally {
     unsubscribe();
     cam.enabled = false;
+    cam.mode = 'body';
   }
 });
 

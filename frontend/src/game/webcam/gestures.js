@@ -6,11 +6,13 @@ import { createShoulderMovement } from './shoulderMovement.js';
 export const cam = {
   enabled: false,
   calibrated: false,
+  mode: 'body', // body (full-body pose, pose.js) | seated (face + hands + shoulders, this file)
   status: 'off', // off | loading | calibrating | tracking | lost | error
   error: null,
   face: false,
   hands: 0,
   movement: 'frame',
+  forward: 0, // body mode: 0..1 walking speed from arm swing or running in place
   moveUntil: 0,
   runUntil: 0,
   turn: 0, // rad/s, + = turn left
@@ -22,13 +24,24 @@ export const cam = {
   frame: null, // last raw frame for the preview
 };
 
-export function webcamPace(now = performance.now()) {
+// Seated engine pace from the shoulder-lift deadlines: 0 still, 1 walk, 2 run.
+function seatedPace(now) {
   if (!cam.enabled || now >= cam.moveUntil) return 0;
   return now < cam.runUntil ? 2 : 1;
 }
 
+export function webcamPace(now = performance.now()) {
+  if (cam.mode !== 'body') return seatedPace(now);
+  return !cam.enabled ? 0 : cam.forward > 0.75 ? 2 : cam.forward > 0.05 ? 1 : 0;
+}
+
 const listeners = new Set();
 export function onGesture(cb) { listeners.add(cb); return () => listeners.delete(cb); }
+// Shared by the seated engine here and the full-body pose engine (pose.js).
+export function emitGesture(name, t, hand) {
+  cam.lastGesture = { name, t };
+  for (const cb of listeners) cb(name, hand);
+}
 
 export const TUNE = {
   yawDead: 0.04, yawGain: 8, turnMax: 2.0,
@@ -91,8 +104,7 @@ export function createGestureEngine(now = () => performance.now()) {
   function emit(name, t, hand) {
     if (last[name] && t - last[name] < TUNE.cooldownMs) return;
     last[name] = t;
-    cam.lastGesture = { name, t };
-    for (const cb of listeners) cb(name, hand);
+    emitGesture(name, t, hand);
   }
   function held(name, cond, ms, t) {
     if (!cond) { delete holds[name]; return false; }
@@ -172,7 +184,7 @@ export function createGestureEngine(now = () => performance.now()) {
         cam.turn = Math.sign(skew) * Math.min(1.7, Math.max(0, Math.abs(skew) - 0.10) * 4.5);
       }
 
-      const moving = webcamPace(t) > 0;
+      const moving = seatedPace(t) > 0;
       if (moving && !wasMoving) emit('move', t);
       wasMoving = moving;
 

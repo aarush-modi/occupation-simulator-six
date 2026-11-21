@@ -4,6 +4,7 @@ import { useGame, STEPS, shiftClock, live } from './store';
 import { interactables } from './world';
 import { startAudio, blip } from './audio';
 import { cam, onGesture, GESTURE_HINT } from './webcam/gestures';
+import { BODY_GESTURE_HINT } from './webcam/pose';
 import WebcamPanel from './webcam/WebcamPanel';
 import { gestureList } from './Player';
 import * as flow from './flow';
@@ -51,7 +52,7 @@ function Prompt() {
             {label}
           </div>
           {cam.enabled && gestureList(it)[0] && (
-            <div style={{ fontSize: 13, color: '#f2b233' }}>Webcam: {GESTURE_HINT[gestureList(it)[0]]}</div>
+            <div style={{ fontSize: 13, color: '#f2b233' }}>Webcam: {cam.mode === 'body' ? BODY_GESTURE_HINT.fist : GESTURE_HINT[gestureList(it)[0]]}</div>
           )}
         </div>
       )}

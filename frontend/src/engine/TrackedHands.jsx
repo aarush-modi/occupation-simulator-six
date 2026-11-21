@@ -68,7 +68,8 @@ function Hand({ side, boxing, strike }) {
       const face = frame.face;
       const width = face ? Math.hypot(face[234].x - face[454].x, (face[234].y - face[454].y) / aspect) : 0.155;
       trackedWrist(target, frame.hands[index], width, aspect);
-      if (!trackedFingers(goal, frame.hands[index], frame.handWorld?.[index], aspect)) restingFingers(goal, side, carrying ? 0.75 : 0);
+      // Full-body mode synthesises hands from the pose wrists, so it has no real finger data.
+      if (frame.synthetic || !trackedFingers(goal, frame.hands[index], frame.handWorld?.[index], aspect)) restingFingers(goal, side, carrying ? 0.75 : 0);
     } else if (now - data.lastSeen > 180 || carrying) {
       const ready = carrying || boxing;
       target.set(sign * (ready ? 0.22 : 0.29), ready ? -0.37 : -0.63, ready ? -0.39 : -0.21);

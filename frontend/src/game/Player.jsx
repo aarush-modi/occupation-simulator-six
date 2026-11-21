@@ -53,7 +53,8 @@ export default function Player() {
       const s = useGame.getState();
       if (s.skill || s.phase !== 'play') return;
       const it = s.focus && interactables.get(s.focus);
-      if (it && it.label() && gestureList(it).includes(name)) it.use();
+      // Full-body mode: a raised hand ('fist') uses whatever is highlighted.
+      if (it && it.label() && (gestureList(it).includes(name) || (cam.mode === 'body' && name === 'fist'))) it.use();
     });
   }, [camera]);
 
