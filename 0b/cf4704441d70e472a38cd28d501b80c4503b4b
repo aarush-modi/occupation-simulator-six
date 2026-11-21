@@ -1,0 +1,131 @@
+backend/.env.example
+  s_65b34720428e01::t_a029cd8c9f7326 3-6
+frontend/src/engine/scene.js
+  s_65b34720428e01::t_fe6a7b94ba18f7 3
+frontend/src/engine/World.jsx
+  s_65b34720428e01::t_9ad79b58254183 243
+  s_65b34720428e01::t_51c8aa3ae02cc7 87-90,113,122,151
+backend/src/rooms.js
+  s_65b34720428e01::t_a029cd8c9f7326 19,55
+frontend/src/engine/LocalPlayer.jsx
+  s_65b34720428e01::t_195422db76e21d 2,54,79-87,89,104,112,122
+  s_65b34720428e01::t_51c8aa3ae02cc7 181,196
+  s_65b34720428e01::t_fe6a7b94ba18f7 111,113-114
+  s_65b34720428e01::t_6b9a06bd446b54 16
+frontend/src/engine/Hud.jsx
+  s_65b34720428e01::t_ff7e30ab5da87c 11,87,168-169,173,180
+frontend/src/scene/Shell.jsx
+  s_65b34720428e01::t_51c8aa3ae02cc7 1506,1510,1519
+  s_65b34720428e01::t_f0727d40ca1da9 252-265,671-686,1185-1218
+  s_65b34720428e01::t_9ad79b58254183 7,1423-1495,1497-1505,1507,1511,1513-1515,1517,1520,1527,1529-1532,1535,1538,1557-1558
+backend/src/server.js
+  s_65b34720428e01::t_a029cd8c9f7326 14
+frontend/src/shared/catalog/props/sushi_rice_bowl.json
+  s_65b34720428e01::t_f0727d40ca1da9 4
+frontend/src/shared/layout.js
+  s_65b34720428e01::t_fe6a7b94ba18f7 8
+frontend/src/shared/catalog/props/sushi_service_counter.json
+  s_65b34720428e01::t_6a8c507cbe5fd3 1-20
+frontend/src/game/webcam/tracker.js
+  s_65b34720428e01::t_195422db76e21d 22-35,38-39,41-48,52-53,67-71,73-80,87-88,90-97,117-119,121,130-131,139-140
+  s_65b34720428e01::t_6b9a06bd446b54 1,115,120,123
+  s_65b34720428e01::t_8dc3f3dc73534d 5,20,50,82-83,110-114,116,122,124-126,134-136
+REQUIREMENTS.md
+  s_65b34720428e01::t_665702072f3df5 13,40,48,70
+  s_65b34720428e01::t_763f65a46f6f82 14
+  s_65b34720428e01::t_2e24f0cdc7ceda 15,50
+frontend/src/engine/ShiftApp.jsx
+  s_65b34720428e01::t_c110c98ea6d7da 12
+  s_65b34720428e01::t_9ad79b58254183 89
+frontend/src/game/webcam/gestures.js
+  s_65b34720428e01::t_6b9a06bd446b54 4,13,23-25,82,104,106,116-119,129,144
+  s_65b34720428e01::t_8dc3f3dc73534d 5,14,26,99-103,105,107,110
+  s_65b34720428e01::t_fe6a7b94ba18f7 32,139-140
+  s_65b34720428e01::t_f0ced2d7c41423 27
+backend/scripts/try-openai.mjs
+  s_65b34720428e01::t_a029cd8c9f7326 1-20
+frontend/test/legGait.test.mjs
+  s_65b34720428e01::t_61e67efdf8c3b1 1-105
+frontend/src/shared/catalog/props/sushi_serving_plate.json
+  s_65b34720428e01::t_f0727d40ca1da9 4
+  s_65b34720428e01::t_51c8aa3ae02cc7 32
+frontend/src/game/Player.jsx
+  s_65b34720428e01::t_195422db76e21d 42,52,58,65,85
+  s_65b34720428e01::t_6b9a06bd446b54 10
+  s_65b34720428e01::t_fe6a7b94ba18f7 71-73
+frontend/src/shared/catalog/props/sushi_rice_station.json
+  s_65b34720428e01::t_f0727d40ca1da9 6
+frontend/src/shared/CONTRACTS.md
+  s_65b34720428e01::t_763f65a46f6f82 12
+  s_65b34720428e01::t_665702072f3df5 10
+backend/test/generate.test.js
+  s_65b34720428e01::t_665702072f3df5 1-3,5-23,25-54,56-69,117
+  s_65b34720428e01::t_61e67efdf8c3b1 4,24,55,70-116
+frontend/src/shared/catalog/props/salmon_fillet.json
+  s_65b34720428e01::t_f0727d40ca1da9 4
+frontend/src/game/webcam/legGait.js
+  s_65b34720428e01::t_6b9a06bd446b54 1-3,5-22,25-32,35-69,76-84,87-89,91-95
+  s_65b34720428e01::t_fe6a7b94ba18f7 4,23-24,33-34,70-75,85-86,90
+frontend/src/shared/schema.js
+  s_65b34720428e01::t_54a36fb853634a 60-66
+backend/src/generate.js
+  s_65b34720428e01::t_fe6a7b94ba18f7 20-21,33,201-202,236
+  s_65b34720428e01::t_54a36fb853634a 58,107,109-111
+  s_65b34720428e01::t_a029cd8c9f7326 1,3,60,71-96,105,128,132,148-149,153-160,164-194,234,268,280,299-304
+frontend/src/game/webcam/WebcamPanel.jsx
+  s_65b34720428e01::t_fe6a7b94ba18f7 56-60,84,94
+  s_65b34720428e01::t_6b9a06bd446b54 3,7,35,64,72-73,91
+  s_65b34720428e01::t_4bd29ac2e61d29 33-34,36-43
+frontend/src/shared/catalog/props/sushi_prep_board.json
+  s_65b34720428e01::t_f0727d40ca1da9 6,67-68
+frontend/src/scene/Prop.jsx
+  s_65b34720428e01::t_51c8aa3ae02cc7 109,111-116
+frontend/src/game/Hud.jsx
+  s_65b34720428e01::t_ff7e30ab5da87c 51,109-110,126,139,141,149-150,167,184,187,189,193,200,206-209,213,215,217,231,251-256,263
+backend/src/gemini.js
+  s_65b34720428e01::t_9c29b9200ca3c8 1-72
+backend/src/scenario.js
+  s_65b34720428e01::t_8c2b5134a39843 1-105
+backend/src/simulation.js
+  s_65b34720428e01::t_829f159dffbced 1-346
+backend/test/simulator.test.js
+  s_65b34720428e01::t_cfaeb9235f3ce2 1-289
+frontend/app/components/App.jsx
+  s_65b34720428e01::t_f333dee0b54bef 1-274
+frontend/app/components/World.jsx
+  s_65b34720428e01::t_008bd81063664c 1-262
+frontend/app/globals.css
+  s_65b34720428e01::t_cd72c1710eef8a 1-145
+frontend/app/lib/connection.js
+  s_65b34720428e01::t_92993ae67f11d7 1-92
+frontend/app/lib/gesture.js
+  s_65b34720428e01::t_f9bbca7c5c1691 1-166
+frontend/app/lib/useMotion.js
+  s_65b34720428e01::t_708f93eaca7b28 1-104
+frontend/src/engine/actions.js
+  s_65b34720428e01::t_1723c537cead0a 40-42
+frontend/src/game/Rig.jsx
+  s_65b34720428e01::t_c8540f03d2cfcc 299
+frontend/src/game/flow.js
+  s_65b34720428e01::t_d9db1d20284fd8 77,103,118,158
+frontend/src/game/store.js
+  s_65b34720428e01::t_98d0e1d4128778 13
+frontend/src/shared/catalog/catalog.generated.js
+  s_65b34720428e01::t_4e4414a27cfe4d 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0bcf4704441d70e472a38cd28d501b80c4503b4b",
+  "prompts": {},
+  "sessions": {
+    "s_65b34720428e01": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ff54-7e69-7d53-bfbc-4bd6797073a3",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Jie Xuan Liu <baronliu1993@gmail.com>"
+    }
+  }
+}
