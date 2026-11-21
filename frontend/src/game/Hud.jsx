@@ -150,8 +150,9 @@ export function Steady({ skill, close }) {
       const time = (t - t0) / 1000;
       const drift = (Math.sin(time * 1.3) * 0.6 + Math.sin(time * 2.9 + 1) * 0.4 + 0.25) * skill.drift;
       const input = dialInput(dial, cam.dial, t);
-      s.vel += (drift + input * DIAL.gain) * dt * 2.2;
-      s.vel *= Math.pow(0.08, dt);
+      const inGreen = s.v >= skill.band[0] && s.v <= skill.band[1];
+      s.vel += (drift + input * DIAL.gain * (inGreen ? DIAL.bandGain : 1)) * dt * 2.2;
+      s.vel *= Math.pow(inGreen ? DIAL.bandDamp : 0.08, dt);
       s.v = Math.min(1, Math.max(0, s.v + s.vel * dt));
       const inBand = s.v >= skill.band[0] && s.v <= skill.band[1];
       total += dt; if (inBand) { inBandTime += dt; s.held += dt; } else s.held = Math.max(0, s.held - dt * 1.5);

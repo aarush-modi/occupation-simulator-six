@@ -10,6 +10,7 @@ import { localPose, reconcile, samplePlayer, sampleNpc, send } from './net';
 import { use, getIndex, lastGrabAt } from './actions';
 import { staticInteractables, matchesObjective, KIND_GESTURES, anchorFrame, BOUNDS } from './world';
 import TrackedHands from './TrackedHands';
+import { carryingNeeded, mayRelease } from './carry';
 import { footstep } from '../game/audio';
 import { cam, onGesture, webcamPace } from '../game/webcam/gestures';
 import { clampToArena } from '../shared/gameRules';
@@ -19,7 +20,6 @@ const RADIUS = 0.3;
 const REACH = 2.4;
 const BODY_REACH = 4.2; // full-body webcam: aim by body heading, so reach further
 const BODY_SPEED = 1.8; // full-body webcam: m/s at full arm-swing cadence (cam.forward = 1)
-const tmpV = new THREE.Vector3(), fwdV = new THREE.Vector3();
 
 export function collide(p, colliders) {
   p.x = THREE.MathUtils.clamp(p.x, BOUNDS.minX + RADIUS, BOUNDS.maxX - RADIUS);
@@ -96,6 +96,9 @@ export default function LocalPlayer({ colliders }) {
     // Opening the hand immediately after a grab finishes that gesture.
     if ((name === 'release' || name === 'unpinch') && performance.now() - lastGrabAt < 450) return;
     const releasing = f.kind === 'place' || f.kind === 'handoff';
+    const now = performance.now();
+    const moving = cam.enabled && (webcamPace(now) > 0 || cam.forward > 0.05 || Math.abs(cam.turn) > 0.2);
+    if (releasing && !mayRelease({ it: f, matches: matchesObjective(s.state.objectives[s.state.cur], f), state: s.state, you: s.you, now, grabAt: lastGrabAt, moving })) return;
     use(f, releasing ? s.state.players[s.you]?.holdHand ?? 'right' : side);
   }), []);
 
@@ -161,7 +164,10 @@ export default function LocalPlayer({ colliders }) {
       camera.getWorldDirection(fwdV);
       const obj = s.state?.objectives?.[s.state.cur];
       const hfx = -Math.sin(yaw.current), hfz = -Math.cos(yaw.current);
+      const needed = carryingNeeded(s.state, s.you);
       const consider = (it) => {
+        // Carrying what the plan needs: only its destination can take it, so no other spot lights up.
+        if (needed && it.kind === 'place' && !matchesObjective(obj, it)) return;
         const dx = it.pos[0] - camera.position.x, dy = it.pos[1] - camera.position.y, dz = it.pos[2] - camera.position.z;
         const required = matchesObjective(obj, it);
         let score;

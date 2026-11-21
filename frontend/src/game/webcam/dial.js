@@ -1,6 +1,7 @@
 // Handwheel control from the webcam dial (cam.dial). The tilt held relative to the first tilt seen sets how hard the
 // wheel turns, so holding a tilt keeps pushing. Clockwise as the player sees it raises the value.
-export const DIAL = { dead: 0.06, full: 0.6, gain: 1.6, forgetMs: 600 };
+// Inside the green band the wheel answers more gently and settles faster, so small corrections do not overshoot.
+export const DIAL = { dead: 0.06, full: 0.6, gain: 1.6, forgetMs: 600, bandGain: 0.45, bandDamp: 0.02 };
 
 export function dialInput(state, dial, now) {
   if (!dial) {
