@@ -56,6 +56,17 @@ function makeFloor(blueprint, catalog) {
   };
 }
 
+// Stations the player's current and next objectives use. Coworkers keep away from them so the player's work spot
+// stays clear. A grab counts at the station the item is sitting in.
+export function playerStations(state) {
+  const reserved = new Set();
+  for (const obj of (state.objectives ?? []).slice(state.cur, state.cur + 2)) {
+    const at = obj.verb === 'grab' ? state.items?.[obj.target]?.at : obj.verb === 'place' || obj.verb === 'press' ? obj.target : null;
+    if (typeof at === 'string' && at.includes('.')) reserved.add(at.slice(0, at.indexOf('.')));
+  }
+  return reserved;
+}
+
 const DEFAULT_NPC_MODEL = 'gpt-5-mini';
 
 export function createNpcPlanner({ apiKey, model = DEFAULT_NPC_MODEL, fetcher = fetch } = {}) {
@@ -125,7 +136,7 @@ export class RoomCrowd {
     this.activePlan = true;
     const context = {
       occupation: this.blueprint.occupation, title: this.blueprint.title, objective: state.objectives[state.cur]?.label,
-      stations: [...this.stations.values()].filter(s => !state.closed.includes(s.id)).map(({ id, label }) => ({ id, label })),
+      stations: [...this.stations.values()].filter(s => !state.closed.includes(s.id) && !playerStations(state).has(s.id)).map(({ id, label }) => ({ id, label })),
       npcs: this.actors.map(({ id, role, side }) => ({ id, role, side: side ?? 'coworker' })), activities: actions,
     };
     Promise.resolve().then(() => this.planner(context)).then((plans) => {
@@ -172,8 +183,17 @@ export class RoomCrowd {
     }
     this.plan(state);
     const events = [];
+    const reserved = playerStations(state);
     for (const actor of this.actors) {
       actor.speed = 0;
+      // A coworker heading to or working at the player's station moves on (rivals still contest stations).
+      const keepClear = actor.side !== 'rival';
+      if (keepClear && actor.station && reserved.has(actor.station) && (actor.mode === 'work' || actor.mode === 'travel')) {
+        actor.path = [];
+        actor.until = 0;
+        actor.station = null;
+        actor.mode = 'idle';
+      }
       if (actor.mode === 'talk' && actor.audience) {
         const listener = state.players[actor.audience];
         if (listener && distance(listener.pos, actor.pos) < 3) actor.yaw = yawToward(actor.pos, listener.pos);
@@ -241,7 +261,7 @@ export class RoomCrowd {
       if (actor.until > now || actor.talkTo) continue;
       actor.audience = null;
 
-      const open = [...this.stations.values()].filter(s => !state.closed.includes(s.id));
+      const open = [...this.stations.values()].filter(s => !state.closed.includes(s.id) && !(keepClear && reserved.has(s.id)));
       const plan = this.plans.get(actor.id);
       const work = (actor.visits++ % 2 === 0 && open.find(s => s.id === plan?.station)) || open[(actor.visits + actor.index) % open.length];
       const action = plan?.action ?? actions[(actor.visits + actor.index) % actions.length];

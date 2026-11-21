@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createNpcPlanner, RoomCrowd } from '../src/npcs.js';
+import { createNpcPlanner, playerStations, RoomCrowd } from '../src/npcs.js';
 import { Room } from '../src/rooms.js';
 import { CATALOG, blueprint } from './fixtures.js';
 
@@ -60,4 +60,30 @@ test('the smaller OpenAI model batches NPC direction and the room rejects unknow
   assert.equal(crowd.plans.get('mgr').action, 'prepare');
   assert.equal(crowd.plans.has('coworker'), false);
   assert.equal(crowd.smallTalk('mgr', { pos: crowd.snapshot().mgr.pos }), 'Good morning. We are setting up for service.');
+});
+
+test('coworkers keep away from the stations the player needs next', () => {
+  const bp = blueprint();
+  // The cup is in hand and the next steps are seating it in the main machine and pulling the shot there.
+  const state = { phase: 'play', closed: [], cur: 2, objectives: bp.objectives, items: { cup1: { at: 'hand' } },
+    players: { p: { active: true, pos: [0, 0, 4.3], lastSeen: 0 } } };
+  assert.deepEqual([...playerStations(state)], ['main']);
+  const crowd = new RoomCrowd(bp, CATALOG, null);
+  crowd.actors.forEach(actor => actor.greeted.add('p'));
+  // a coworker already working at the main machine leaves it
+  crowd.actors[0].station = 'main'; crowd.actors[0].mode = 'work'; crowd.actors[0].until = Infinity;
+  const visited = new Set();
+  for (let t = 0; t < 30000; t += 50) {
+    state.players.p.lastSeen = t;
+    crowd.step(state, t);
+    for (const actor of crowd.actors) if (actor.station) visited.add(actor.station);
+  }
+  assert.equal(visited.has('main'), false, `coworkers used ${[...visited]}`);
+  assert.ok(visited.size > 0, 'coworkers still work elsewhere');
+});
+
+test('a grab reserves the station the item sits in', () => {
+  const bp = blueprint();
+  const state = { cur: 4, objectives: bp.objectives, items: { cup1: { at: 'main.cup' } } };
+  assert.deepEqual([...playerStations(state)].sort(), ['main', 'shelf']);
 });
