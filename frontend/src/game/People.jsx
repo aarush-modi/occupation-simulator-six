@@ -12,7 +12,7 @@ import { talkRhodes } from './flow';
 // Procedural humanoid. motion.current = { speed, talk, point }
 // hat: material or null (no hard hat). hair: material for a hair cap when there is no hat. hands: glove/skin material.
 // pants: leg material (defaults to the outfit). Arms read motion.current.carry (both forearms forward).
-export function Humanoid({ outfit = M.coverallOrange, hat = M.hatYellow, motion, vest = true, hair = null, hands = M.glove, pants = null, skin = M.skin }) {
+export function Humanoid({ outfit = M.coverallOrange, hat = M.hatYellow, motion, vest = true, hair = null, hands = M.glove, pants = null, skin = M.skin, boxing = null }) {
   const lLeg = useRef(), rLeg = useRef(), lArm = useRef(), rArm = useRef(), torso = useRef(), head = useRef();
   useFrame((st) => {
     const t = st.clock.elapsedTime;
@@ -22,8 +22,16 @@ export function Humanoid({ outfit = M.coverallOrange, hat = M.hatYellow, motion,
     const sw = Math.min(sp, 1.5) * 0.55;
     if (lLeg.current) lLeg.current.rotation.x = Math.sin(ph) * sw;
     if (rLeg.current) rLeg.current.rotation.x = -Math.sin(ph) * sw;
-    if (lArm.current) lArm.current.rotation.x = m.carry ? -1.1 : -Math.sin(ph) * sw * 0.8 + (m.talk ? Math.sin(t * 3) * 0.15 - 0.3 : 0);
-    if (rArm.current) rArm.current.rotation.x = m.carry ? -1.1 : m.point ? -1.5 : Math.sin(ph) * sw * 0.8 + (m.talk ? Math.sin(t * 2.3 + 1) * 0.2 - 0.4 : 0);
+    const reach = m.work === 'stock' ? -1.1 : m.work === 'inspect' ? -0.62 : -0.91;
+    const handMotion = m.work === 'prepare' ? 0.25 : m.work === 'inspect' ? 0.1 : 0.17;
+    if (lArm.current) lArm.current.rotation.x = m.carry ? -1.1 : m.work ? reach + Math.sin(t * 4.6) * handMotion : -Math.sin(ph) * sw * 0.8 + (m.talk ? Math.sin(t * 3) * 0.15 - 0.3 : 0);
+    if (rArm.current) rArm.current.rotation.x = m.carry ? -1.1 : m.work ? reach - 0.15 + Math.sin(t * 4.6 + Math.PI) * handMotion : m.point ? -1.5 : Math.sin(ph) * sw * 0.8 + (m.talk ? Math.sin(t * 2.3 + 1) * 0.2 - 0.4 : 0);
+    if (m.sparring && lArm.current && rArm.current) {
+      lArm.current.rotation.x = m.sparring === 'cover' ? -1.92 : -1.06 + Math.sin(t * 5) * 0.08;
+      rArm.current.rotation.x = m.sparring === 'strike' ? -1.68 : m.sparring === 'windup' ? 0.39 : m.sparring === 'cover' ? -1.92 : -0.89;
+      lArm.current.rotation.z = -0.24;
+      rArm.current.rotation.z = 0.24;
+    }
     if (torso.current) torso.current.position.y = 1.02 + Math.sin(t * 1.6) * 0.008 + Math.abs(Math.sin(ph)) * sw * 0.04;
     if (head.current) head.current.rotation.y = m.talk ? Math.sin(t * 1.3) * 0.15 : 0;
   });
@@ -42,7 +50,7 @@ export function Humanoid({ outfit = M.coverallOrange, hat = M.hatYellow, motion,
         {[[-0.25, lArm], [0.25, rArm]].map(([x, ref], i) => (
           <group key={i} ref={ref} position={[x, 0.56, 0]}>
             <C rt={0.065} rb={0.055} h={0.62} p={[0, -0.31, 0]} m={outfit} seg={12} />
-            <B s={[0.09, 0.12, 0.08]} p={[0, -0.66, 0]} m={hands} round={0.03} />
+            <B s={boxing ? [0.15, 0.18, 0.16] : [0.09, 0.12, 0.08]} p={[0, -0.66, 0]} m={boxing ?? hands} round={boxing ? 0.057 : 0.03} />
           </group>
         ))}
         <group ref={head} position={[0, 0.72, 0]}>

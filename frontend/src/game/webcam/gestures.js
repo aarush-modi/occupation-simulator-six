@@ -1,7 +1,7 @@
 // Pure gesture + head-control engine. Input: MediaPipe landmarks (normalized image coords, unmirrored).
 // Output: continuous control values in `cam` and discrete gesture events via onGesture().
 
-import { createLegGait } from './legGait.js';
+import { createShoulderMovement } from './shoulderMovement.js';
 
 export const cam = {
   enabled: false,
@@ -10,12 +10,14 @@ export const cam = {
   error: null,
   face: false,
   hands: 0,
+  movement: 'frame',
   moveUntil: 0,
   runUntil: 0,
   turn: 0, // rad/s, + = turn left
   pitch: 0, // target pitch (rad)
   wheel: 0, // accumulated wheel input, consumed by skills
   palmPush: false,
+  guard: false,
   lastGesture: null,
   frame: null, // last raw frame for the preview
 };
@@ -51,6 +53,7 @@ export function handFeatures(lm) {
   const top = Math.min(lm[4].y, lm[8].y, lm[12].y, lm[16].y, lm[20].y, lm[5].y, lm[9].y);
   return {
     center, palm, roll, count, thumb, top,
+    pinch: d2(lm[4], lm[8]) / Math.max(0.001, d2(lm[5], lm[17])),
     fist: count === 0,
     open: count >= 4,
     one: index && !middle && !ring && !pinky,
@@ -76,10 +79,14 @@ export function createGestureEngine(now = () => performance.now()) {
   const hist = []; // { t, hands: [features] }
   const last = {}; // cooldowns
   const holds = {}; // gesture -> start time
+  const pinching = new Set();
+  let shoulders = null;
+  let shoulderNeutral = null;
   let prevFist = [false, false];
   let prevRoll = null;
   let calibUntil = 0;
-  const gait = createLegGait();
+  const movement = createShoulderMovement();
+  let wasMoving = false;
 
   function emit(name, t) {
     if (last[name] && t - last[name] < TUNE.cooldownMs) return;
@@ -101,9 +108,16 @@ export function createGestureEngine(now = () => performance.now()) {
       calibUntil = now() + ms;
       cam.calibrated = false;
       cam.status = 'calibrating';
+      cam.movement = 'frame';
+      wasMoving = false;
+      shoulders = null;
+      shoulderNeutral = null;
+      pinching.clear();
+      hist.length = 0;
+      cam.guard = false;
       cam.moveUntil = 0;
       cam.runUntil = 0;
-      gait.reset();
+      movement.reset();
     },
     get calibrating() { return !cam.calibrated; },
     base,
@@ -114,25 +128,34 @@ export function createGestureEngine(now = () => performance.now()) {
       cam.face = !!face;
       cam.hands = hands.length;
       if (pose !== undefined) {
-        gait.update(pose, t);
-        Object.assign(cam, gait.deadlines);
+        movement.update(pose, t);
+        Object.assign(cam, movement.deadlines);
+        cam.movement = movement.status;
+        const left = pose?.[11], right = pose?.[12];
+        shoulders = left?.visibility > 0.5 && right?.visibility > 0.5 && Number.isFinite(left.z) && Number.isFinite(right.z)
+          ? (right.z - left.z) / Math.max(0.07, Math.abs(left.x - right.x)) : null;
+        if (shoulders != null && (shoulderNeutral === null || t < calibUntil)) {
+          shoulderNeutral = shoulderNeutral === null ? shoulders : shoulderNeutral * 0.8 + shoulders * 0.2;
+        }
       }
 
-      // calibration: average neutral face until the time has passed and we have 20 samples
-      if (!cam.calibrated && (t < calibUntil || base.n < 20)) {
-        if (face) {
-          base.n++;
-          base.width += (face.width - base.width) / base.n;
-          base.yaw += (face.yaw - base.yaw) / base.n;
-          base.pitch += (face.pitch - base.pitch) / base.n;
-        }
-        cam.turn = 0;
-        return;
+      // Head calibration can finish later if the face is small in a full-body frame.
+      if (face && (t < calibUntil || base.n < 12)) {
+        base.n++;
+        base.width += (face.width - base.width) / base.n;
+        base.yaw += (face.yaw - base.yaw) / base.n;
+        base.pitch += (face.pitch - base.pitch) / base.n;
       }
-      if (!cam.calibrated) { cam.calibrated = true; cam.status = 'tracking'; }
+      if (!cam.calibrated) {
+        if (t < calibUntil || (!face && !hands.length && cam.movement !== 'ready')) {
+          cam.turn = 0;
+          return;
+        }
+        cam.calibrated = true;
+      }
 
       // head controls
-      if (face) {
+      if (face && base.n >= 12) {
         cam.status = 'tracking';
         const dy = face.yaw - base.yaw;
         const mag = Math.max(0, Math.abs(dy) - TUNE.yawDead);
@@ -140,16 +163,29 @@ export function createGestureEngine(now = () => performance.now()) {
         cam.turn = turn ? cam.turn + (turn - cam.turn) * 0.45 : 0;
         cam.pitch = Math.max(-TUNE.pitchMax, Math.min(TUNE.pitchMax, -(face.pitch - base.pitch) * TUNE.pitchGain));
       } else {
-        cam.status = 'lost';
-        cam.turn = 0;
+        cam.status = hands.length || shoulders != null || cam.movement === 'ready' ? 'tracking' : 'lost';
+        const skew = shoulders == null || shoulderNeutral == null ? 0 : shoulders - shoulderNeutral;
+        cam.turn = Math.sign(skew) * Math.min(1.7, Math.max(0, Math.abs(skew) - 0.10) * 4.5);
       }
+
+      const moving = webcamPace(t) > 0;
+      if (moving && !wasMoving) emit('move', t);
+      wasMoving = moving;
 
       // history for motion gestures
       hist.push({ t, hands });
       while (hist.length && t - hist[0].t > 1600) hist.shift();
 
       // palm push (continuous)
-      const fw = face?.width ?? base.width;
+      const fw = face?.width || base.width || 0.12;
+      cam.guard = hands.length === 2 && hands.every(h => h.open &&
+        Math.abs(h.center.x - (face?.cx ?? 0.5)) < Math.max(0.19, fw * 1.6) &&
+        h.center.y >= (face?.eyeY ?? 0.32) - 0.06 &&
+        h.center.y <= (face ? face.chin + Math.max(0.18, face.height) : 0.76));
+      if (hands.some(h => h.fist && hist.some(sample => t - sample.t >= 90 && t - sample.t <= 230 &&
+        sample.hands.some(old => old.fist &&
+        Math.abs(old.center.x - h.center.x) < 0.15 && h.palm >= old.palm * 1.22 &&
+        h.palm - old.palm >= Math.max(0.012, fw * 0.10))))) emit('strike', t);
       const pushing = hands.some((h) => h.open && h.palm / fw > TUNE.palmPush);
       // discrete palmPush event once the push has been held briefly (continuous value stays in cam.palmPush)
       if (pushing && held('palmPush', true, 250, t)) emit('palmPush', t);
@@ -167,6 +203,21 @@ export function createGestureEngine(now = () => performance.now()) {
         }
         prevRoll = roll;
       } else prevRoll = null;
+
+      // Thumb and index finger work at a range of distances. The wider release threshold filters jitter.
+      const sides = new Set();
+      for (const h of hands) {
+        const side = h.center.x >= (face?.cx ?? 0.5) ? 'right' : 'left';
+        sides.add(side);
+        if (!pinching.has(side) && !h.fist && h.pinch < 0.25) {
+          pinching.add(side);
+          emit('pinch', t);
+        } else if (pinching.has(side) && !h.fist && h.pinch > 0.45) {
+          pinching.delete(side);
+          emit('unpinch', t);
+        }
+      }
+      for (const side of pinching) if (!sides.has(side)) pinching.delete(side);
 
       // fist snap (any hand goes from not-fist to fist)
       hands.forEach((h, i) => { if (h.fist && !prevFist[i]) emit('fist', t); });
@@ -224,6 +275,9 @@ export const GESTURE_HINT = {
   handsOnHead: 'Both hands on top of your head',
   rub: 'Rub your hands together',
   fist: 'Make a fist',
+  move: 'Shoulders raised',
+  pinch: 'Pinch your thumb and index finger',
+  unpinch: 'Open your thumb and index finger',
   twoFists: 'Grab with both fists',
   pushDown: 'Push both fists down',
   swipeUp: 'Swipe a hand up',

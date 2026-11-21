@@ -1,17 +1,19 @@
 'use client';
-// The generated workplace: shell + stations/decor at anchors, items at rest or carried, NPCs at spots, remote
+// The generated workplace: shell + stations/decor at anchors, items at rest or carried, routed NPCs, remote
 // players as interpolated avatars, closed-station dressing, and markers for the current objective and focus.
 import * as THREE from 'three';
 import { memo, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useLabel } from './Labels';
 import { useShift } from './store';
-import { samplePlayer } from './net';
+import { samplePlayer, sampleNpc } from './net';
 import { getIndex } from './actions';
 import { restFrame, objectiveMarker, recipeOf, RECIPES } from './world';
 import { Prop, placeAt, Shell } from './scene';
 import { Humanoid } from '../game/People';
 import { M } from '../game/materials';
+import { B } from '../game/parts';
+import { arenaPoints } from '../shared/gameRules';
 
 const std = (color, rough = 0.85) => new THREE.MeshStandardMaterial({ color, roughness: rough });
 const LOCAL_M = {
@@ -50,27 +52,29 @@ function Outfit({ look }) {
 
 function Npc({ npc }) {
   const g = useRef();
-  const motion = useRef({ speed: 0, talk: false });
-  const look = useMemo(() => outfitProps(npc.outfit, hash(npc.id)), [npc]);
-  const { position, rotationY } = useMemo(() => placeAt(npc.anchor), [npc.anchor]);
-  useLabel(`npc:${npc.id}`, { pos: () => [position[0], 2.12, position[2]], title: npc.name, sub: npc.role });
-  useFrame((state, dt) => {
+  const motion = useRef({ speed: 0, talk: false, work: false });
+  const look = useMemo(() => outfitProps(npc.outfit, hash(npc.id)), [npc.outfit, npc.id]);
+  useLabel(`npc:${npc.id}`, {
+    pos: () => g.current ? [g.current.position.x, 2.05, g.current.position.z] : null,
+    title: npc.side ? `${npc.name} · ${npc.side === 'ally' ? 'Ally' : 'Rival'}` : npc.name,
+    sub: npc.activity || npc.role,
+    color: npc.side === 'ally' ? '#85bfff' : npc.side === 'rival' || npc.mode === 'sparring' ? '#ff9e91' : undefined,
+  });
+  useFrame((_, dt) => {
     if (!g.current) return;
-    const c = state.camera.position;
-    const dx = c.x - position[0], dz = c.z - position[2];
-    const target = Math.hypot(dx, dz) < 5 ? Math.atan2(dx, dz) : rotationY;
-    let d = target - g.current.rotation.y;
-    while (d > Math.PI) d -= Math.PI * 2;
-    while (d < -Math.PI) d += Math.PI * 2;
-    g.current.rotation.y += d * Math.min(1, dt * 3);
-    motion.current.talk = useShift.getState().subtitle?.who === npc.name;
+    const state = sampleNpc(npc.id) ?? npc;
+    g.current.position.set(...state.pos);
+    const diff = state.yaw - g.current.rotation.y;
+    g.current.rotation.y += Math.atan2(Math.sin(diff), Math.cos(diff)) * Math.min(1, dt * 12);
+    motion.current.speed = THREE.MathUtils.damp(motion.current.speed, state.speed, 10, dt);
+    motion.current.work = state.mode === 'work' ? state.action : null;
+    motion.current.sparring = state.mode === 'sparring' ? state.action : null;
+    motion.current.talk = state.mode === 'talk' || useShift.getState().subtitle?.who === npc.name;
   });
   return (
-    <group position={position}>
-      <group ref={g} rotation-y={rotationY}>
-        <Humanoid {...look} motion={motion} />
-        <Outfit look={look} />
-      </group>
+    <group ref={g} position={npc.pos} rotation-y={npc.yaw}>
+      <Humanoid {...look} motion={motion} boxing={npc.mode === 'sparring' ? M.coverallRed : null} />
+      <Outfit look={look} />
     </group>
   );
 }
@@ -80,6 +84,7 @@ function RemotePlayer({ id, index }) {
   const motion = useRef({ speed: 0, carry: false });
   const last = useRef(null);
   const name = useShift((s) => s.state?.players?.[id]?.name ?? 'Player');
+  const boxing = useShift((s) => s.state?.game?.kind === 'sparring');
   const heldProp = useShift((s) => {
     const h = s.state?.players?.[id]?.held;
     return h ? s.blueprint?.items?.find((i) => i.id === h)?.prop ?? null : null;
@@ -103,13 +108,15 @@ function RemotePlayer({ id, index }) {
     const sp = prev && dt > 0 ? Math.hypot(p.pos[0] - prev[0], p.pos[2] - prev[2]) / dt : 0;
     motion.current.speed = THREE.MathUtils.damp(motion.current.speed, Math.min(sp / 2.2, 1.6), 8, dt);
     motion.current.carry = !!recipe;
+    const game = useShift.getState().state?.game;
+    motion.current.sparring = boxing ? (p.guard ? 'cover' : game.clock - (p.strikeAt ?? -Infinity) < 230 ? 'strike' : 'ready') : null;
     last.current = p.pos;
   });
   const fit = recipe ? Math.min(1, 0.45 / Math.max(...recipe.size)) : 1;
   return (
     <group ref={g}>
       <group ref={body}>
-        <Humanoid {...look} motion={motion} />
+        <Humanoid {...look} motion={motion} boxing={boxing ? M.fabricBlue : null} />
         {recipe && <group position={[0, 1.0, 0.42]} scale={fit}><Prop recipe={recipe} plated={plated} /></group>}
       </group>
     </group>
@@ -236,11 +243,50 @@ function Markers() {
   );
 }
 
+const MATS = { blue: '#254c86', red: '#8c3943', charcoal: '#343944', sand: '#8e725c' };
+const ROPES = [M.coverallRed, M.chrome, M.fabricBlue];
+
+function SparringArena({ arena }) {
+  const { shape, points } = useMemo(() => {
+    const points = arenaPoints(arena);
+    const shape = new THREE.Shape(points.map(([x, , z]) => new THREE.Vector2(x, -z)));
+    return { shape, points };
+  }, [arena]);
+  return (
+    <group>
+      <mesh position-y={0.025} rotation-x={-Math.PI / 2} receiveShadow>
+        <shapeGeometry args={[shape]} />
+        <meshStandardMaterial color={MATS[arena.mat]} roughness={0.91} />
+      </mesh>
+      <mesh position-y={0.03} rotation-x={-Math.PI / 2}>
+        <ringGeometry args={[0.98, 1.035, 32]} />
+        <meshBasicMaterial color="#e8deca" />
+      </mesh>
+      {points.map(([x, , z], i) => {
+        const [nx, , nz] = points[(i + 1) % points.length];
+        const length = Math.hypot(nx - x, nz - z);
+        const yaw = -Math.atan2(nz - z, nx - x);
+        const mx = (x + nx) / 2, mz = (z + nz) / 2;
+        return (
+          <group key={i}>
+            <B s={[0.23, 1.4, 0.23]} p={[x, 0.7, z]} m={i % 2 ? M.coverallRed : M.fabricBlue} round={0.04} />
+            <B s={[length, 0.13, 0.13]} p={[mx, 0.035, mz]} r={[0, yaw, 0]} m={M.black} />
+            {ROPES.map((material, j) =>
+              <B key={j} s={[length, 0.037, 0.037]} p={[mx, 0.44 + j * 0.29, mz]} r={[0, yaw, 0]} m={material} />)}
+          </group>
+        );
+      })}
+      {[-1, 1].map((side) => <B key={side} s={[0.5, 0.28, 2.0]} p={[side * (arena.radius + 1), .29, 0]} m={M.black} round={0.05} />)}
+    </group>
+  );
+}
+
 const Static = memo(function Static({ bp }) {
   const idx = getIndex();
   return (
     <>
-      <Shell id={bp.shell} venue={bp.venue} />
+      <Shell id={bp.shell} venue={bp.venue} arena={bp.game?.kind === 'sparring'} />
+      {bp.game?.kind === 'sparring' && <SparringArena arena={bp.game.arena} />}
       {Object.values(idx.stations).map((st) => {
         const { position, rotationY } = placeAt(st.anchor);
         return <Prop key={st.id} recipe={st.recipe} position={position} rotation-y={rotationY} />;
@@ -251,13 +297,13 @@ const Static = memo(function Static({ bp }) {
         const { position, rotationY } = placeAt(d.anchor);
         return <Prop key={`decor${i}`} recipe={recipe} position={position} rotation-y={rotationY} />;
       })}
-      {bp.npcs.map((n) => <Npc key={n.id} npc={n} />)}
     </>
   );
 });
 
 export default function World() {
   const bp = useShift((s) => s.blueprint);
+  const people = useShift(s => s.state?.people);
   const closedKey = useShift((s) => s.state?.closed?.join(',') ?? '');
   const others = useShift((s) => (s.state ? Object.keys(s.state.players).filter((id) => id !== s.you).sort().join(',') : ''));
   const idx = getIndex();
@@ -267,6 +313,7 @@ export default function World() {
   return (
     <group>
       <Static bp={bp} />
+      {Object.values(people ?? {}).map(npc => <Npc key={npc.id} npc={npc} />)}
       {Object.values(idx.stations).map((st) => (
         <group key={st.id}>
           <StationLabel st={st} closed={closed.has(st.id)} />
@@ -275,7 +322,7 @@ export default function World() {
       ))}
       {bp.items.map((it) => <Item key={it.id} id={it.id} />)}
       {ids.map((id, i) => <RemotePlayer key={id} id={id} index={i + 1} />)}
-      <Markers />
+      {bp.game?.kind !== 'sparring' && <Markers />}
     </group>
   );
 }

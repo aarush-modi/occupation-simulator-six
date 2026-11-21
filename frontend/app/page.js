@@ -8,7 +8,7 @@ const JOBS = [
   'barista', 'line cook', 'baker', 'bartender', 'sushi chef', 'barber', 'hairstylist', 'nail technician',
   'warehouse picker', 'mail sorter', 'shipping clerk', 'car mechanic', 'carpenter', 'electrician', 'bike mechanic',
   'florist', 'pharmacist', 'cashier', 'bookseller', 'software engineer', 'journalist', 'architect', 'accountant',
-  'nurse', 'veterinarian', 'dentist', 'paramedic', 'lab technician', 'chemist', 'forensic analyst',
+  'nurse', 'veterinarian', 'dentist', 'paramedic', 'lab technician', 'chemist', 'forensic analyst', 'boxer',
 ];
 
 const font = "'Inter','Segoe UI',system-ui,sans-serif";
@@ -46,14 +46,14 @@ export default function HomePage() {
           onSubmit={(e) => { e.preventDefault(); play(); }}
           style={{ marginTop: 34, display: 'flex', gap: 10, padding: 8, borderRadius: 14, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
         >
-          <label htmlFor="job" style={{ alignSelf: 'center', paddingLeft: 12, color: '#a9a097', fontSize: 17, whiteSpace: 'nowrap' }}>I want to be a</label>
+          <label htmlFor="job" style={{ alignSelf: 'center', paddingLeft: 12, color: '#a9a097', fontSize: 17, whiteSpace: 'nowrap' }}>Play as</label>
           <input
             id="job"
             autoFocus
             value={occupation}
-            placeholder="barista"
+            placeholder="A boxer in a rooftop arena"
             onChange={(e) => setOccupation(e.target.value)}
-            maxLength={60}
+            maxLength={320}
             style={{ flex: 1, minWidth: 0, fontSize: 20, fontWeight: 700, padding: '12px 10px', background: 'transparent', border: 0, outline: 'none', color: '#fff' }}
           />
           <button type="submit" disabled={!occupation.trim() || !!busy} style={{ padding: '12px 30px', fontSize: 18, fontWeight: 800, borderRadius: 10, border: 0, background: accent, color: '#111', cursor: occupation.trim() && !busy ? 'pointer' : 'default', opacity: occupation.trim() ? 1 : 0.55 }}>

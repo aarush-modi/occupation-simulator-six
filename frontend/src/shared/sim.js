@@ -6,6 +6,7 @@
 //   applyIntent(state, playerId, intent, now) -> { state, events }   never throws
 //   tick(state, now) -> { state, events }                            event director + stale-player hold release
 import { ANCHORS, ROOM } from './layout.js';
+import { clampToArena, finishChallenge, gameSpawn, newGame, scoreTask, sparringStrike, tickGeneratedGame } from './gameRules.js';
 
 export const MAX_PLAYERS = 4;
 export const STALE_MS = 5000; // release held items of players unseen for longer than this
@@ -64,6 +65,7 @@ export function createRoom(blueprint, catalog, now = Date.now()) {
     phase: 'play',
     startedAt: now,
     players: {},
+    ...(blueprint.game ? { game: newGame(blueprint.game) } : {}),
     items,
     objectives: JSON.parse(JSON.stringify(blueprint.objectives ?? [])),
     cur: 0,
@@ -112,10 +114,11 @@ function deny(events, playerId, reason) {
 }
 
 function maybeReview(state, ctx, now, events) {
-  if (state.phase !== 'play') return;
+  if (state.phase !== 'play' || ctx.bp.game?.kind === 'sparring') return;
   if (state.cur < state.objectives.length) return;
   const pending = ctx.event && state.event.at !== null && !state.event.fired;
   if (pending) return;
+  if (ctx.bp.game?.kind === 'challenge') return finishChallenge(state, ctx.bp.game, now, events);
   state.phase = 'review';
   state.score.finishedAt = now;
   const npc = ctx.bp.npcs?.[0];
@@ -133,6 +136,7 @@ function completeCurrent(state, ctx, skillScore, now, events) {
   if (ctx.event && ctx.event.after === obj.id && !state.event.fired && state.event.at === null) {
     state.event.at = now + (ctx.event.delaySec ?? 3) * 1000;
   }
+  scoreTask(state, ctx.bp.game, now, events);
   settle(state, ctx, now, events);
 }
 
@@ -177,7 +181,7 @@ function release(state, ctx, playerId, events) {
 
 // ---------- intents ----------
 
-const GAME_VERBS = new Set(['grab', 'place', 'press', 'talk', 'handoff']);
+const GAME_VERBS = new Set(['grab', 'place', 'press', 'talk', 'handoff', 'strike']);
 
 export function applyIntent(state, playerId, intent, now = Date.now()) {
   const events = [];
@@ -187,7 +191,7 @@ export function applyIntent(state, playerId, intent, now = Date.now()) {
     const t = intent?.t;
 
     if (t === 'join') {
-      join(s, playerId, intent, now, events);
+      join(s, playerId, intent, now, events, ctx.bp.game);
       return { state: s, events };
     }
     const p = s.players[playerId];
@@ -205,7 +209,10 @@ export function applyIntent(state, playerId, intent, now = Date.now()) {
       case 'ping':
         break;
       case 'pose':
-        pose(p, intent);
+        pose(p, intent, ctx.bp.game);
+        break;
+      case 'strike':
+        sparringStrike(s, ctx.bp.game, playerId, now, events);
         break;
       case 'grab':
         grab(s, ctx, playerId, p, intent, now, events);
@@ -236,7 +243,7 @@ export function applyIntent(state, playerId, intent, now = Date.now()) {
   }
 }
 
-function join(s, playerId, intent, now, events) {
+function join(s, playerId, intent, now, events, rules) {
   const name = String(intent.name ?? '').trim().slice(0, 24) || 'Player';
   const existing = s.players[playerId];
   if (existing) {
@@ -253,7 +260,7 @@ function join(s, playerId, intent, now, events) {
   const offsets = [0, 0.8, -0.8, 1.6];
   s.players[playerId] = {
     name,
-    pos: [SPAWN[0] + offsets[idx], SPAWN[1], SPAWN[2]],
+    pos: gameSpawn(rules, idx) ?? [SPAWN[0] + offsets[idx], SPAWN[1], SPAWN[2]],
     yaw: 0,
     pitch: 0,
     held: null,
@@ -262,10 +269,13 @@ function join(s, playerId, intent, now, events) {
   events.push({ type: 'joined', playerId, name });
 }
 
-function pose(p, intent) {
+function pose(p, intent, rules) {
+  if (rules?.kind === 'sparring') p.guard = intent.guard === true;
+  if (typeof intent.active === 'boolean') p.active = intent.active;
   if (Array.isArray(intent.pos) && intent.pos.length === 3 && intent.pos.every(isNum)) {
     p.pos = [clamp(intent.pos[0], -ROOM.W / 2, ROOM.W / 2), clamp(intent.pos[1], 0, ROOM.H), clamp(intent.pos[2], -ROOM.D / 2, ROOM.D / 2)];
   }
+  if (rules?.kind === 'sparring') p.pos = clampToArena(p.pos, rules.arena);
   if (isNum(intent.yaw)) p.yaw = intent.yaw;
   if (isNum(intent.pitch)) p.pitch = clamp(intent.pitch, -Math.PI / 2, Math.PI / 2);
 }
@@ -358,7 +368,7 @@ function handoff(s, ctx, playerId, p, intent, now, events) {
 
 // ---------- tick ----------
 
-export function tick(state, now = Date.now()) {
+export function tick(state, now = Date.now(), { rivalStation } = {}) {
   const events = [];
   try {
     const ctx = ctxOf(state);
@@ -379,6 +389,7 @@ export function tick(state, now = Date.now()) {
         events.push({ type: 'left', playerId: id });
       }
     }
+    if (ctx.bp.game && state.phase === 'play') tickGeneratedGame(w(), ctx.bp.game, now, events, rivalStation);
     return { state: s ?? state, events };
   } catch (err) {
     return { state, events: [{ type: 'error', reason: String(err?.message ?? err) }] };
@@ -400,6 +411,7 @@ function fireEvent(s, ctx, now, events) {
   const keptIds = new Set(kept.map((o) => o.id));
   s.done = s.done.filter((id) => keptIds.has(id));
   for (const id of Object.keys(s.score.skills)) if (!keptIds.has(id)) delete s.score.skills[id];
+  scoreTask(s, ctx.bp.game, now, events);
   // Items held inside the closed station stay there; the validator proves the revised task never needs them.
   settle(s, ctx, now, events);
 }

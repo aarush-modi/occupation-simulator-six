@@ -1,3 +1,4 @@
+import { createNpcPlanner } from './npcs.js';
 // HTTP API + WebSocket room server on one http.Server.
 //   GET  /health
 //   GET  /api/demos
@@ -65,7 +66,7 @@ function readJson(req) {
  * @param {{ catalog: Array, demos: Array, generator: { generate(occupation): Promise }, env?: object, log?: Console }} deps
  */
 export function createApp({ catalog, demos, generator, env = process.env, log = console }) {
-  const rooms = new RoomManager({ catalog, demos, generator, log });
+  const rooms = new RoomManager({ catalog, demos, generator, log, planNpcs: createNpcPlanner({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_NPC_MODEL }) });
 
   const server = createServer(async (req, res) => {
     const origin = req.headers.origin;
@@ -93,7 +94,7 @@ export function createApp({ catalog, demos, generator, env = process.env, log = 
       if (parts[0] === 'api' && parts[1] === 'rooms') {
         if (req.method === 'POST' && parts.length === 2) {
           const body = await readJson(req);
-          const occupation = String(body.occupation ?? '').trim().slice(0, 80);
+          const occupation = String(body.occupation ?? '').trim().slice(0, 320);
           if (!occupation) return reply(400, { error: 'occupation is required' });
           const room = rooms.create(occupation);
           log.log(`[room] ${room.id} created for "${occupation}"`);

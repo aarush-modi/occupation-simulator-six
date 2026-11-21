@@ -1,7 +1,9 @@
 // Rooms: lobby status, the authoritative sim state, connected sockets, and the 20 Hz loop (N3).
 import { randomBytes } from 'node:crypto';
 import { createRoom, applyIntent, tick } from '../../frontend/src/shared/sim.js';
+import { ANCHORS } from '../../frontend/src/shared/layout.js';
 import { pickDemo } from './demos.js';
+import { RoomCrowd } from './npcs.js';
 
 export const TICK_MS = 50; // 20 snapshots per second
 const IDLE_MS = 30 * 60 * 1000;
@@ -19,6 +21,7 @@ export class Room {
     this.source = null; // 'openai' | 'demo'
     this.blueprint = null;
     this.state = null;
+    this.crowd = null;
     this.clients = new Map(); // ws -> { playerId, name, joined }
     this.genToken = 0;
     this.createdAt = Date.now();
@@ -50,7 +53,7 @@ export class Room {
     this.status = 'generating';
     this.error = null;
     this.broadcast(this.statusMsg());
-    const r = await generator.generate(this.occupation);
+    const r = await generator.generate(this.occupation, { fresh: true });
     if (token !== this.genToken) return r;
     if (r.ok) this.setBlueprint(r.blueprint, 'openai');
     else this.fail(r.error || 'generation failed');
@@ -78,6 +81,7 @@ export class Room {
     this.status = 'ready';
     this.error = null;
     this.state = createRoom(blueprint, this.deps.catalog, now);
+    this.crowd = blueprint.game?.kind === 'sparring' ? null : new RoomCrowd(blueprint, this.deps.catalog, this.deps.planNpcs);
     const events = [];
     for (const c of this.clients.values()) {
       if (!c.joined) continue;
@@ -91,7 +95,22 @@ export class Room {
   }
 
   welcome(c) {
-    return { type: 'welcome', you: c.playerId, state: this.state, blueprint: this.blueprint };
+    return { type: 'welcome', you: c.playerId, state: this.snapshot(), blueprint: this.blueprint };
+  }
+
+  snapshot() {
+    if (!this.state) return null;
+    if (this.crowd) return { ...this.state, people: this.crowd.snapshot() };
+    const { arena, opponent } = this.blueprint.game;
+    const people = Object.fromEntries(this.blueprint.npcs.map((npc, index) => {
+      const match = npc.id === opponent;
+      const corner = ANCHORS[npc.anchor].pos;
+      const x = (index % 2 ? -1 : 1) * (arena.radius + 0.75);
+      const pos = [x, 0, corner[2]];
+      const pose = match ? this.state.game.opponent : { pos, yaw: Math.atan2(-x, -pos[2]), speed: 0 };
+      return [npc.id, { id: npc.id, name: npc.name, role: npc.role, outfit: npc.outfit, ...pose, mode: match ? 'sparring' : 'idle' }];
+    }));
+    return { ...this.state, people };
   }
 
   // ----- sockets -----
@@ -130,8 +149,16 @@ export class Room {
     if (msg.t === 'join') return this.join(ws, c, msg, now);
     if (!c.joined) return send(ws, { type: 'events', events: [{ type: 'denied', playerId: null, reason: 'not joined' }] });
     if (!this.state) return; // still generating: nothing to act on yet
+    if (msg.t === 'talk' && !this.blueprint.npcs.some(npc => npc.id === msg.npc)) {
+      const line = this.crowd?.smallTalk(msg.npc, this.state.players[c.playerId]);
+      if (line) send(ws, { type: 'events', events: [{ type: 'say', npc: msg.npc, text: line }] });
+      return;
+    }
     const r = applyIntent(this.state, c.playerId, msg, now);
     this.state = r.state;
+    if (msg.t === 'talk' && r.events.some(event => event.type === 'say')) {
+      this.crowd?.smallTalk(msg.npc, this.state.players[c.playerId]);
+    }
     if (r.events.length) this.broadcast({ type: 'events', events: r.events });
   }
 
@@ -171,10 +198,20 @@ export class Room {
 
   step(now) {
     if (!this.state || !this.clients.size) return;
-    const r = tick(this.state, now);
+    const waiting = this.state.game?.status === 'waiting';
+    const r = tick(this.state, now, { rivalStation: this.crowd?.rivalStation() });
     this.state = r.state;
     if (r.events.length) this.broadcast({ type: 'events', events: r.events });
-    this.broadcast({ type: 'snapshot', state: this.state });
+    if (waiting && this.state.game.status === 'live') {
+      const game = this.blueprint.game;
+      const speaker = game.kind === 'sparring'
+        ? this.blueprint.npcs.find(npc => npc.id !== game.opponent) ?? this.blueprint.npcs.find(npc => npc.id === game.opponent)
+        : this.blueprint.npcs.find(npc => npc.id === game.partner);
+      if (speaker) this.broadcast({ type: 'events', events: [{ type: 'say', npc: speaker.id, text: speaker.lines.intro }] });
+    }
+    const speech = this.crowd?.step(this.state, now) ?? [];
+    if (speech.length) this.broadcast({ type: 'events', events: speech });
+    this.broadcast({ type: 'snapshot', state: this.snapshot() });
   }
 
   broadcast(msg) {

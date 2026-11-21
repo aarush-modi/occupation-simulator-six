@@ -77,6 +77,7 @@ function Game() {
   const bp = useShift((s) => s.blueprint);
   const quality = useMemo(() => (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('quality') ?? 'high' : 'high'), []);
   const colliders = useMemo(() => {
+    if (bp.game?.kind === 'sparring') return [];
     const out = normalizeColliders(shellColliders, bp.shell);
     for (const st of bp.stations) { const r = getIndex()?.stations[st.id]?.recipe; if (r) out.push(recipeColliders(r, st.anchor)); }
     for (const d of bp.decor ?? []) { const r = RECIPES[d.prop]; if (r) out.push(recipeColliders(r, d.anchor)); }

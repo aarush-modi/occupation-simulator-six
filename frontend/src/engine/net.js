@@ -5,9 +5,9 @@ import { WS_BASE, BACKEND } from './world';
 import { blip, playAlarm, stopAlarm } from '../game/audio';
 
 export const INTERP_MS = 110;
-const snaps = []; // { t, players }
+const snaps = []; // { t, players, people }
 // Local pose, written by the first-person player every frame, sent at 20 Hz.
-export const localPose = { pos: [0, 0, 0], yaw: 0, pitch: 0, ready: false };
+export const localPose = { pos: [0, 0, 0], yaw: 0, pitch: 0, guard: false, ready: false };
 // Set when the server puts us somewhere far from where we think we are (respawn, clamp); the player snaps to it.
 export const reconcile = { pos: null };
 
@@ -18,6 +18,7 @@ export function onEvents(cb) { listeners.add(cb); return () => listeners.delete(
 
 export function connect(id, playerName) {
   roomId = id; name = playerName; closedByUs = false;
+  snaps.length = 0;
   open();
   clearInterval(poseTimer);
   poseTimer = setInterval(sendPose, 50);
@@ -78,12 +79,12 @@ function sendPose() {
   const pos = localPose.pos.map((v) => Math.round(v * 1000) / 1000);
   sentPoses.push({ t: performance.now(), pos });
   while (sentPoses.length && performance.now() - sentPoses[0].t > 1500) sentPoses.shift();
-  send({ t: 'pose', pos, yaw: Math.round(localPose.yaw * 1000) / 1000, pitch: Math.round(localPose.pitch * 1000) / 1000 });
+  send({ t: 'pose', pos, yaw: Math.round(localPose.yaw * 1000) / 1000, pitch: Math.round(localPose.pitch * 1000) / 1000, active: Boolean(s.started), guard: localPose.guard });
 }
 
 function pushSnap(state) {
   if (!state?.players) return;
-  snaps.push({ t: performance.now(), players: state.players });
+  snaps.push({ t: performance.now(), players: state.players, people: state.people });
   while (snaps.length > 30) snaps.shift();
 }
 
@@ -142,15 +143,20 @@ function handle(msg) {
 
 function npcName(id) {
   const bp = useShift.getState().blueprint;
-  return bp?.npcs?.find((n) => n.id === id)?.name ?? id;
+  return useShift.getState().state?.people?.[id]?.name ?? bp?.npcs?.find((n) => n.id === id)?.name ?? id;
 }
 
 let alarmTimer = null;
 function onEvent(ev) {
   const s = useShift.getState();
   switch (ev.type) {
+    case 'gameCue':
+      if (!ev.playerId || ev.playerId === s.you) s.toastMsg(ev.text, 'info', 1500);
+      if (ev.sound === 'bell') blip(860, 0.38, 0.10, 'triangle');
+      if (ev.sound === 'point') blip(520, 0.09, 0.08);
+      break;
     case 'say':
-      s.say(npcName(ev.npc), ev.text);
+      if (!ev.playerId || ev.playerId === s.you) s.say(npcName(ev.npc), ev.text);
       break;
     case 'objective': {
       const obj = s.state?.objectives?.find((o) => o.id === ev.id);
@@ -184,29 +190,32 @@ function labelOfItem(id) {
 
 function onReview() {
   stopAlarm();
-  document.exitPointerLock?.();
 }
 
 let deniedHandler = null;
 export function onDenied(cb) { deniedHandler = cb; }
 
 /** Interpolated pose of a player at render time. */
-export function samplePlayer(id, now = performance.now()) {
+export function samplePlayer(id) { return samplePose('players', id); }
+export function sampleNpc(id) { return samplePose('people', id); }
+
+function samplePose(group, id, now = performance.now()) {
   const t = now - INTERP_MS;
   let a = null, b = null;
   for (let i = snaps.length - 1; i >= 0; i--) {
     if (snaps[i].t <= t) { a = snaps[i]; b = snaps[i + 1] ?? null; break; }
   }
   if (!a) a = snaps[0];
-  const pa = a?.players?.[id];
+  const pa = a?.[group]?.[id];
   if (!pa) return null;
-  const pb = b?.players?.[id];
-  if (!pb) return { pos: pa.pos, yaw: pa.yaw, pitch: pa.pitch ?? 0 };
+  const pb = b?.[group]?.[id];
+  if (!pb) return pa;
   const k = Math.min(1, Math.max(0, (t - a.t) / Math.max(1, b.t - a.t)));
   let dy = pb.yaw - pa.yaw;
   while (dy > Math.PI) dy -= Math.PI * 2;
   while (dy < -Math.PI) dy += Math.PI * 2;
   return {
+    ...pb,
     pos: [pa.pos[0] + (pb.pos[0] - pa.pos[0]) * k, pa.pos[1] + (pb.pos[1] - pa.pos[1]) * k, pa.pos[2] + (pb.pos[2] - pa.pos[2]) * k],
     yaw: pa.yaw + dy * k,
     pitch: (pa.pitch ?? 0) + ((pb.pitch ?? 0) - (pa.pitch ?? 0)) * k,

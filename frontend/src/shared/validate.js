@@ -95,6 +95,20 @@ export function checkBlueprint(input, catalog) {
     useAnchor(n.anchor, `npc ${n.id}`);
   }
 
+  if (bp.game?.kind === 'sparring') {
+    if (!npcs.has(bp.game.opponent)) errors.push('game.opponent must name a listed NPC');
+    if (bp.stations.length || bp.items.length || bp.decor.length || bp.objectives.length || bp.event) {
+      errors.push('A sparring arena uses its own scoring and must have empty stations, items, decor and objectives, with no workflow event.');
+    }
+    return { errors, warnings, blueprint: bp };
+  }
+
+  if (!bp.stations.length) errors.push('A workflow needs at least one station.');
+  if (bp.objectives.length < 3) errors.push('A workflow needs at least three objectives.');
+  if (!bp.event) errors.push('A workflow needs an event.');
+  if (bp.game?.kind === 'challenge' && !npcs.has(bp.game.partner)) errors.push('game.partner must name a listed NPC');
+  if (!bp.event) return { errors, warnings, blueprint: bp };
+
   // ---- objectives ----
   const objIds = new Set();
   const closed = bp.event.close;
@@ -102,6 +116,11 @@ export function checkBlueprint(input, catalog) {
   if (!npcs.has(bp.event.announce.npc)) errors.push(`event.announce: unknown npc ${bp.event.announce.npc}`);
   const afterIdx = bp.objectives.findIndex((o) => o.id === bp.event.after);
   if (afterIdx < 0) errors.push(`event.after: unknown objective ${bp.event.after}`);
+  if (bp.game?.kind === 'challenge') {
+    const count = Math.min(bp.objectives.length, afterIdx + 1 + bp.event.replaceRemaining.length);
+    const bonus = bp.game.role === 'ally' ? Math.floor(count / 2) : 0;
+    if (bp.game.goal > count * bp.game.pointsPerTask + bonus) errors.push('Challenge goal exceeds the points available in the shorter task path.');
+  }
 
   const checkObjective = (o, where, isReplacement) => {
     const who = `${where} ${o.id}`;

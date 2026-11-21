@@ -28,6 +28,35 @@ export const fmtTime = (ms) => {
 };
 
 const VERB_ICON = { grab: '✋', place: '⤓', press: '◉', talk: '💬' };
+const remaining = (game) => fmtTime(game.deadline === null ? 0 : game.deadline - game.clock);
+const MATCH_RESULT = { win: 'You won', loss: 'You lost', draw: 'Draw' };
+
+function SparringPanel({ bp, game }) {
+  const rival = bp.npcs.find(npc => npc.id === bp.game.opponent);
+  const action = game.opponent.action;
+  const message = game.status === 'rest' ? 'Next round soon' : game.status === 'waiting' ? 'Waiting for the bell' :
+    action === 'windup' ? 'Incoming strike. Raise both open palms.' : action === 'cover' ? 'Rival is guarding. Wait for an opening.' :
+    'Raise your shoulders to close in. Make a fist to strike.';
+  return (
+    <section aria-label="Match scoreboard" style={{ position: 'absolute', top: 20, left: 20, width: 'min(380px, 55vw)', padding: '14px 16px', ...ui.panel, borderLeft: '3px solid #67acf7', color: '#fff' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13, color: '#d1d8e8' }}>
+        <span>Round {game.round} / {bp.game.rounds}</span>
+        <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{game.status === 'waiting' ? '–' : remaining(game)}</strong>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, margin: '10px 0 8px' }}>
+        {[['Your corner', game.points, game.wins, '#85bfff'], [rival?.name ?? 'Opponent', game.rivalPoints, game.rivalWins, '#ff9e91']].map(([label, points, wins, color]) => (
+          <div key={color} style={{ borderBottom: `2px solid ${color}`, paddingBottom: 5 }}>
+            <div style={{ fontSize: 13 }}>{label}</div>
+            <strong style={{ fontSize: 32, color }}>{points}</strong>
+            <span style={{ marginLeft: 6, fontSize: 11, color: '#c1c9d7' }}>{wins} {wins === 1 ? 'round' : 'rounds'}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 12, color: '#c1c9d7' }}>First to {bp.game.pointsToWin} points or ahead at the bell</div>
+      <div style={{ marginTop: 7, fontSize: 14, color: action === 'windup' ? '#ffb1a6' : '#fff' }}>{message}</div>
+    </section>
+  );
+}
 
 function TaskPanel() {
   useTick(500);
@@ -35,6 +64,9 @@ function TaskPanel() {
   const st = useShift((s) => s.state);
   const banner = useShift((s) => s.banner);
   if (!bp || !st) return null;
+  if (st.game?.kind === 'sparring') return <SparringPanel bp={bp} game={st.game} />;
+  const challenge = st.game?.kind === 'challenge' ? st.game : null;
+  const rival = bp.game?.role === 'rival' ? bp.npcs.find(npc => npc.id === bp.game.partner) : null;
   const cur = st.objectives[st.cur];
   const done = new Set(st.done);
   const alarm = !!banner || (st.event?.fired && Date.now() - (st.event.at ?? 0) < 8000);
@@ -42,8 +74,9 @@ function TaskPanel() {
     <div style={{ position: 'absolute', top: 20, left: 20, width: 340, padding: '14px 16px 12px', ...ui.panel, borderLeft: `3px solid ${alarm ? '#ff3b2f' : ui.accent}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, letterSpacing: 2, color: '#a9a39a', textTransform: 'uppercase' }}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>{bp.occupation}</span>
-        <span style={{ color: '#f2d9a6', fontVariantNumeric: 'tabular-nums' }}>{fmtTime(Date.now() - st.startedAt)}</span>
+        <span style={{ color: '#f2d9a6', fontVariantNumeric: 'tabular-nums' }}>{challenge ? challenge.status === 'waiting' ? '–' : remaining(challenge) : fmtTime(Date.now() - st.startedAt)}</span>
       </div>
+      {challenge && <div style={{ marginTop: 8, fontSize: 13, color: '#d1d8e8' }}>Team {challenge.points} / {bp.game.goal}{rival && ` · ${rival.name} ${challenge.rivalPoints}`}</div>}
       <div style={{ marginTop: 8, fontSize: 18, fontWeight: 700, color: '#fff', lineHeight: 1.3 }}>{cur ? cur.label : 'Shift complete'}</div>
       <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 3 }}>
         {st.objectives.map((o, i) => {
@@ -78,6 +111,7 @@ function Prompt() {
   const skill = useShift((s) => s.skill);
   const label = focus?.label;
   const g = focus ? KIND_GESTURES[focus.kind]?.[0] : null;
+  const hint = focus?.kind === 'press' ? 'Push an open palm or pinch' : GESTURE_HINT[g];
   return (
     <>
       <div style={{ position: 'absolute', left: '50%', top: '50%', width: 6, height: 6, marginLeft: -3, marginTop: -3, borderRadius: 6, background: label ? ui.accent : 'rgba(255,255,255,0.8)', boxShadow: '0 0 6px rgba(0,0,0,0.6)' }} />
@@ -86,7 +120,7 @@ function Prompt() {
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {label}
           </div>
-          {cam.enabled && g && <div style={{ fontSize: 12, color: ui.accent }}>Webcam: {GESTURE_HINT[g] ?? g}</div>}
+          {cam.enabled && g && <div style={{ fontSize: 12, color: ui.accent }}>{hint ?? g}</div>}
         </div>
       )}
     </>
@@ -164,20 +198,18 @@ function SkillDialog() {
 function Intro() {
   const bp = useShift((s) => s.blueprint);
   const set = useShift((s) => s.set);
-  const npc = bp.npcs[0];
   useEffect(() => onGesture((name) => {
-    if (name !== 'wave') return;
+    if (name !== 'wave' && name !== 'move') return;
     startAudio();
     set({ started: true });
-    if (npc?.lines?.intro) setTimeout(() => useShift.getState().say(npc.name, npc.lines.intro), 400);
-  }), [set, npc]);
+  }), [set]);
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'radial-gradient(ellipse at center, rgba(10,10,12,0.35), rgba(10,10,12,0.85))', pointerEvents: 'auto' }}>
       <div style={{ textAlign: 'center', color: '#fff', maxWidth: 640, padding: 24 }}>
         <div style={{ fontSize: 13, letterSpacing: 6, color: ui.accent, textTransform: 'uppercase' }}>Workshift · {bp.occupation}</div>
         <div style={{ fontSize: 50, fontWeight: 900, marginTop: 6, letterSpacing: -1, lineHeight: 1.05 }}>{bp.title}</div>
         <div style={{ fontSize: 17, color: '#d8d0c4', marginTop: 14, lineHeight: 1.5 }}>{bp.briefing}</div>
-        <div style={{ marginTop: 22, fontSize: 16, color: ui.accent }}>Wave to start the shift</div>
+        <div style={{ marginTop: 22, fontSize: 16, color: ui.accent }}>Raise both shoulders or wave to start</div>
       </div>
     </div>
   );
@@ -187,15 +219,24 @@ function Review() {
   const bp = useShift((s) => s.blueprint);
   const st = useShift((s) => s.state);
   const [busy, setBusy] = useState(false);
+  const game = st.game;
+  const result = game?.result ? MATCH_RESULT[game.result] : 'Shift complete';
   const elapsed = (st.score?.finishedAt ?? Date.now()) - (st.score?.startedAt ?? st.startedAt);
+  const metrics = [['Time', fmtTime(elapsed)]];
   const skilled = st.objectives.filter((o) => o.skill && o.skill !== 'none');
   const skillVals = skilled.map((o) => st.score?.skills?.[o.id]).filter((v) => typeof v === 'number');
   const avg = skillVals.length ? skillVals.reduce((a, b) => a + b, 0) / skillVals.length : null;
+  if (game?.kind === 'sparring') metrics.push(['Rounds won', game.wins], ['Opponent rounds won', game.rivalWins]);
+  else {
+    metrics.push(['Steps completed', `${st.done.length} / ${st.objectives.length}`]);
+    if (game?.kind === 'challenge') metrics.push(['Team points', `${game.points} / ${bp.game.goal}`]);
+  }
   const again = async () => {
     setBusy(true);
     try {
-      const { roomId } = await createRoom(bp.occupation);
-      window.location.href = `/shift?room=${encodeURIComponent(roomId)}&host=1&job=${encodeURIComponent(bp.occupation)}`;
+      const request = useShift.getState().occupation || bp.occupation;
+      const { roomId } = await createRoom(request);
+      window.location.href = `/shift?room=${encodeURIComponent(roomId)}&host=1&job=${encodeURIComponent(request)}`;
     } catch { window.location.reload(); }
   };
   return (
@@ -204,11 +245,11 @@ function Review() {
         <div style={{ gridColumn: '1 / -1' }}>
           <div style={{ fontSize: 13, letterSpacing: 6, color: ui.accent }}>SHIFT REVIEW</div>
           <div style={{ fontSize: 40, fontWeight: 900, lineHeight: 1.1, marginTop: 4 }}>{bp.title}</div>
-          <div style={{ color: '#bbb', marginTop: 6, fontSize: 16 }}>Shift complete as a {bp.occupation.toLowerCase()} in {fmtTime(elapsed)}{avg != null ? ` · skill ${Math.round(avg * 100)}%` : ''}</div>
+          <div style={{ color: '#bbb', marginTop: 6, fontSize: 16 }}>{result} · {fmtTime(elapsed)}{avg != null ? ` · skill ${Math.round(avg * 100)}%` : ''}</div>
         </div>
         <div style={{ padding: 18, ...ui.panel }}>
           <div style={{ fontWeight: 800, marginBottom: 6 }}>Your shift</div>
-          {[['Time', fmtTime(elapsed)], ['Steps completed', `${st.done.length} / ${st.objectives.length}`], ...skilled.map((o) => [o.label, typeof st.score?.skills?.[o.id] === 'number' ? `${Math.round(st.score.skills[o.id] * 100)}%` : '-']),
+          {[...metrics, ...skilled.map((o) => [o.label, typeof st.score?.skills?.[o.id] === 'number' ? `${Math.round(st.score.skills[o.id] * 100)}%` : '-']),
             ...(st.event?.fired ? [['Handled the change of plan', '✓']] : [])].map(([k, v], i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.07)', fontSize: 14 }}>
               <span style={{ color: '#bbb' }}>{k}</span><b style={{ whiteSpace: 'nowrap' }}>{v}</b>

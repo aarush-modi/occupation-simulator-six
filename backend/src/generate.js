@@ -16,6 +16,8 @@ const anchorsOf = (...kinds) => Object.keys(ANCHORS).filter((id) => kinds.includ
 // ---------- catalog menu ----------
 
 // Rough occupation -> shell hints, used only to trim the menu when the catalog gets large.
+const isBoxing = (occupation) => /\b(boxer|boxing|kickboxer|kickboxing|sparring)\b/i.test(occupation);
+
 const SHELL_HINTS = {
   sushi: /\b(sushi|itamae|nigiri|sashimi|omakase|maki)\b/,
   cafe: /barista|cafe|coffee|cook|chef|bak|kitchen|restaurant|bar|food|pizza|butcher|waiter|server|dish/,
@@ -77,7 +79,7 @@ function strictSchema(node) {
     const required = new Set(node.required);
     for (const [name, property] of Object.entries(node.properties)) {
       strictSchema(property);
-      if (!required.has(name)) node.properties[name] = { anyOf: [property, { type: 'null' }] };
+      if (!required.has(name)) node.properties[name] = { anyOf: [...(property.anyOf ?? [property]), { type: 'null' }] };
     }
     node.required = Object.keys(node.properties);
     node.additionalProperties = false;
@@ -100,8 +102,12 @@ function omitNullFields(value) {
 
 export function systemPrompt(menu, example) {
   const lines = [
-    'You design one short, playable first-person work shift for "Workshift", a co-op 3D job simulator.',
-    'One or two players act out a REPRESENTATIVE task of the occupation with body motion. Engine verbs: grab, place, press, talk (walking is free).',
+    'You are the scenario director for Workshift, a first-person multiplayer occupation simulator. The request can include a job, venue, situation, and style. Turn it into an original playable game with a specific setting, player actions, NPC roles, and clear stakes. Use the game schema as the complete list of mechanics the runtime can execute.',
+    'Decide what players do repeatedly and what makes them succeed, then cast NPCs who fit that loop and write the briefing around those rules. Treat any reference to an existing game as a genre cue. Invent the venue, cast, dialogue, and visual identity.',
+    'Available mechanics: set game to null for an occupation workflow with a mid-shift complication. Set game.kind to challenge for a timed workflow with a cooperating or competing NPC. Set game.kind to sparring for a first-person arcade sports match with rounds, scoring, and a reactive rival.',
+    'Arcade boxing example: a local rival calls you into a five-sided ring, a coach can brief your corner, and a bell starts each round. Pick a venue and mat, points target, round count, round duration, and an opponent from the cast. A pressure rival closes in faster, a counter rival covers after player attacks, and a steady rival uses a regular rhythm. The player scores by landing virtual strikes within reach and can guard when the rival winds up. Use abstract scoring and non-graphic feedback. Leave stations, items, decor and objectives empty and event null for this mode.',
+    'Timed challenges use the workflow tasks and event. Set a goal that uses most of the task path and can still be reached on the shortest path. An ally earns a small bonus on every second completed task. A rival gains points while working at open stations, at the configured pace, and wins by reaching the target first. Give players time to walk between stations. Give the partner a job-specific reason to help or compete, such as a coworker rushing the last shipment or a rival cook trying to plate first.',
+    'Players use upper-body webcam gestures. Raising shoulders moves forward, head motion turns, closing a hand or pinching can grab, opening the hand can place, an open palm can press, and waving at a person can talk. Sparring uses a virtual strike and a two-open-palm guard. Write instructions only for supported actions. All players share round or shift progress.',
     'Output one JSON object matching the response schema. Use null for unused fields that allow null. Use only prop IDs from the catalog menu below.',
     '',
     'WORKPLACE: one compact 14 m x 11 m work area with fixed anchors. Pick the closest equipment and architecture family using `shell`:',
@@ -120,7 +126,7 @@ export function systemPrompt(menu, example) {
     ...menu.map((r) => JSON.stringify(compact(r))),
     '',
     'RULES (the result is machine-checked; a broken shift is thrown away):',
-    '- 2-5 stations, 2-6 items, 0-5 decor, 1-2 npcs. Ids are short snake_case and unique across stations, items and npcs. Keep every string short.',
+    '- For workflows and timed challenges use 2-5 stations, 2-6 items, 0-5 decor, 2-3 NPCs with a mix of coworkers and people the role serves. Ids are short snake_case and unique across stations, items and npcs. Keep every string short.',
     '- objectives: 5-8 steps (never more than 10) in play order, forming the real task of the job, e.g. grab cup -> place cup in espresso.cup -> press espresso.brew -> grab cup -> place cup in pickup.pickup.',
     '  Only stations with slots can receive items (furniture and decor have none); place targets use exactly the slot ids listed in the menu.',
     '  grab: target = item id. place: target = "<stationId>.<slotId>" or a surface anchor, `item` = the item id. press: target = "<stationId>.<controlId>". talk: target = npc id.',
@@ -131,7 +137,7 @@ export function systemPrompt(menu, example) {
     '  Proven pattern: put two stations of the same prop in the room (main + backup) and a spare item on a surface. after = the objective that places the item into the main station; close = the main station; replaceRemaining = grab the spare item -> place it in the backup -> press backup control -> grab it -> deliver it.',
     '  An event with a null `close` is also fine (e.g. a customer changes the order or the delivery spot).',
     '- npcs: realistic co-workers / customers. lines.intro briefs the task (<= 16 words), lines.done congratulates (<= 8 words).',
-    '- briefing: 1-2 short sentences, second person. title: <= 5 words. facts: 2-3 true, interesting facts about the real job.',
+    '- occupation: just the short job name. briefing: 1-2 short sentences, second person. title: <= 5 words. facts: 2-3 true, interesting facts about the real job.',
   ];
   if (example) lines.push('', 'EXAMPLE OUTPUT (format reference only, design your own for the requested occupation):', JSON.stringify(example));
   return lines.join('\n');
@@ -193,15 +199,21 @@ export function createGenerator({
     return { text, usage: result.usage };
   });
 
-  async function run(occupation) {
+  async function run(occupation, previousTitle) {
     const t0 = Date.now();
     const menu = menuFor(catalog, occupation);
     const system = systemPrompt(menu, example);
     const schema = responseSchema(menu);
     const [shell] = guessShells(occupation);
     if (shell === 'sushi') schema.properties.shell.enum = ['sushi'];
+    if (isBoxing(occupation)) {
+      const sparring = schema.properties.game.anyOf.find(option => option.properties?.kind?.const === 'sparring');
+      sparring.properties.arena.properties.sides = { type: 'integer', const: 5 };
+      schema.properties.game = sparring;
+    }
     const attempts = [];
-    let user = `Occupation: ${occupation}`;
+    const request = `Design a scenario for this request: ${JSON.stringify(occupation)}${previousTitle ? `\nThe last scenario was titled ${JSON.stringify(previousTitle)}. Give this one a different venue, cast, or gameplay setup.` : ''}`;
+    let user = request;
     let lastErrors = [];
     for (let attempt = 1; attempt <= 2; attempt++) {
       const left = budgetMs - (Date.now() - t0);
@@ -234,6 +246,7 @@ export function createGenerator({
         raw = omitNullFields(JSON.parse(text));
         ({ errors, warnings, blueprint } = checkBlueprint(raw, catalog));
         if (shell === 'sushi' && raw.shell !== 'sushi') errors.push('Use the sushi bar shell for this shift.');
+        if (isBoxing(occupation) && (raw.game?.kind !== 'sparring' || raw.game.arena?.sides !== 5)) errors.push('Boxing uses the sparring game in a five-sided arena.');
       } catch (err) {
         errors = [`response is not JSON: ${err.message}`];
       }
@@ -241,7 +254,7 @@ export function createGenerator({
       if (!errors.length) return finish({ ok: true, blueprint, occupation, t0, attempts, menu });
       lastErrors = errors;
       user =
-        `Occupation: ${occupation}\n\nYour previous answer was:\n${text}\n\n` +
+        `${request}\n\nYour previous answer was:\n${text}\n\n` +
         `It failed validation with these errors:\n- ${errors.slice(0, 12).join('\n- ')}\n\nReturn a corrected complete JSON object.`;
     }
     return finish({ ok: false, error: lastErrors.slice(0, 6).join('; '), occupation, t0, attempts, menu });
@@ -272,23 +285,24 @@ export function createGenerator({
     } catch {}
   }
 
-  /** Generate (or fetch from cache) a validated blueprint for an occupation. Never throws. */
-  async function generate(occupation) {
+  /** Generate a validated blueprint. Fresh rooms can request a new take on a previous prompt. */
+  async function generate(occupation, { fresh = false } = {}) {
     const key = normalise(occupation);
-    if (cache.has(key)) {
+    const previous = cache.get(key);
+    if (!fresh && previous) {
       const meta = { at: new Date().toISOString(), occupation, model, ok: true, ms: 0, cacheHit: true };
       log.log(`[openai] ${JSON.stringify(meta)}`);
-      return { ok: true, blueprint: cache.get(key), meta };
+      return { ok: true, blueprint: previous, meta };
     }
-    if (inflight.has(key)) return inflight.get(key);
-    const p = run(occupation)
+    if (!fresh && inflight.has(key)) return inflight.get(key);
+    const p = run(occupation, previous?.title)
       .catch((err) => ({ ok: false, error: String(err?.message ?? err), meta: { occupation, model } }))
       .then((r) => {
-        inflight.delete(key);
+        if (!fresh) inflight.delete(key);
         if (r.ok) cache.set(key, r.blueprint);
         return r;
       });
-    inflight.set(key, p);
+    if (!fresh) inflight.set(key, p);
     return p;
   }
 

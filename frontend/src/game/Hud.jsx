@@ -249,7 +249,7 @@ function Alarm() {
 function Intro() {
   const start = useGame((s) => s.start);
   useEffect(() => onGesture((name) => {
-    if (name !== 'wave') return;
+    if (name !== 'wave' && name !== 'move') return;
     startAudio();
     start();
     useGame.getState().say('Radio', 'Floor, doghouse. New hand is on deck. Rhodes, he is all yours.', 3600);
@@ -260,7 +260,7 @@ function Intro() {
         <div style={{ fontSize: 13, letterSpacing: 6, color: '#f2b233' }}>WORKSHIFT</div>
         <div style={{ fontSize: 54, fontWeight: 900, marginTop: 6, letterSpacing: -1 }}>Offshore Drilling Rig</div>
         <div style={{ fontSize: 17, color: '#d8d0c4', marginTop: 10 }}>You are a floorhand on a twelve hour tour. The well is at eleven thousand feet. Do your job, keep your crew safe.</div>
-        <div style={{ marginTop: 22, fontSize: 16, color: '#f2b233' }}>Wave to start the shift</div>
+        <div style={{ marginTop: 22, fontSize: 16, color: '#f2b233' }}>Raise both shoulders or wave to start</div>
       </div>
     </div>
   );

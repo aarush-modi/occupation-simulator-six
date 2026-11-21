@@ -70,8 +70,9 @@ export function controlPos(idx, target) {
   return c ? toWorld(st.frame, c.pos) : null;
 }
 
-export function npcHead(idx, id) {
+export function npcHead(idx, id, people) {
   const n = idx.npcs[id];
+  if (people?.[id]) return [people[id].pos[0], 1.55, people[id].pos[2]];
   return n ? [n.frame.pos[0], 1.55, n.frame.pos[2]] : null;
 }
 
@@ -88,10 +89,10 @@ const SURFACES = Object.keys(ANCHORS).filter((id) => ANCHORS[id].kind === 'surfa
 
 // Gestures (webcam) that trigger each interaction kind.
 export const KIND_GESTURES = {
-  grab: ['fist'],
-  place: ['pushDown', 'release'],
-  handoff: ['pushDown', 'release'],
-  press: ['palmPush'],
+  grab: ['pinch', 'fist'],
+  place: ['unpinch', 'pushDown', 'release'],
+  handoff: ['unpinch', 'pushDown', 'release'],
+  press: ['palmPush', 'pinch'],
   talk: ['wave'],
 };
 
@@ -134,9 +135,6 @@ export function staticInteractables(idx, state, you) {
       out.push({ id: `press:${target}`, kind: 'press', pos: toWorld(st.frame, c.pos), r: 0.25, label: `${c.label}${closed.has(st.id) ? ' (closed)' : ''}`, intent: { t: 'press', target }, station: st.id, target, requires: c.requires ?? [] });
     }
   }
-  for (const n of Object.values(idx.npcs)) {
-    out.push({ id: `talk:${n.id}`, kind: 'talk', pos: [n.frame.pos[0], 1.4, n.frame.pos[2]], r: 0.6, label: `Talk to ${n.name} (${n.role})`, intent: { t: 'talk', npc: n.id }, npc: n.id });
-  }
   return out;
 }
 
@@ -169,7 +167,7 @@ export function objectiveMarker(idx, state, you, itemPosOf) {
     return f ? [f.pos[0], f.pos[1] + 0.1, f.pos[2]] : null;
   }
   if (obj.verb === 'press') return controlPos(idx, obj.target);
-  if (obj.verb === 'talk') return npcHead(idx, obj.target);
+  if (obj.verb === 'talk') return npcHead(idx, obj.target, state.people);
   return null;
 }
 

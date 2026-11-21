@@ -1492,7 +1492,7 @@ function VenueSign({ name, outdoor }) {
   );
 }
 
-export default function Shell({ id = 'cafe', venue, cutaway = false }) {
+export default function Shell({ id = 'cafe', venue, cutaway = false, arena = false }) {
   const sid = CFG[id] ? id : 'cafe';
   const native = CFG[sid];
   const floor = VENUE_FLOORS[venue?.floor] ?? native.floor;
@@ -1515,8 +1515,8 @@ export default function Shell({ id = 'cafe', venue, cutaway = false }) {
         {walls.map(side => <Wall key={side} id={materialId} cfg={cfg} side={side} />)}
       </NoCast>
       <VenueBoundary sides={fence} outdoor={outdoor} />
-      {SUPPLY_COUNTERS.map((c, i) => <SupplyCounter key={i} id={sid} cfg={cfg} c={c} />)}
-      {!outdoor && !openFront && <Dressing id={sid} cfg={cfg} />}
+      {!arena && SUPPLY_COUNTERS.map((c, i) => <SupplyCounter key={i} id={sid} cfg={cfg} c={c} />)}
+      {!arena && !outdoor && !openFront && <Dressing id={sid} cfg={cfg} />}
       {venue?.name && <VenueSign name={venue.name} outdoor={outdoor} />}
     </group>
   );

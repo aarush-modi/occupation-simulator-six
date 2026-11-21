@@ -51,6 +51,31 @@ export const Objective = z.object({
   say: z.object({ npc: npcRef, text: z.string() }).optional(), // NPC line when this objective is completed
 });
 
+const GeneratedGame = z.union([
+  z.object({
+    kind: z.literal('sparring'),
+    arena: z.object({
+      sides: z.int().min(4).max(8),
+      radius: z.number().min(2.8).max(4.3),
+      mat: z.enum(['blue', 'red', 'charcoal', 'sand']),
+    }),
+    opponent: npcRef,
+    style: z.enum(['pressure', 'counter', 'steady']),
+    rounds: z.int().min(1).max(3),
+    roundSeconds: z.int().min(15).max(75),
+    pointsToWin: z.int().min(3).max(10),
+  }),
+  z.object({
+    kind: z.literal('challenge'),
+    partner: npcRef,
+    role: z.enum(['ally', 'rival']),
+    seconds: z.int().min(25).max(180),
+    pointsPerTask: z.int().min(1).max(8),
+    goal: z.int().min(2).max(60),
+    rivalEverySeconds: z.int().min(4).max(30),
+  }),
+]);
+
 export const Blueprint = z.object({
   version: z.literal(1).default(1),
   occupation: z.string(),
@@ -64,7 +89,8 @@ export const Blueprint = z.object({
     palette: z.enum(['native', 'warm', 'coastal', 'forest', 'industrial', 'clinical', 'bold']),
     lighting: z.enum(['native', 'daylight', 'warm', 'task', 'dusk']),
   }).optional(),
-  stations: z.array(z.object({ id: z.string(), prop: z.string(), anchor, label: z.string() })).min(1).max(9),
+  game: GeneratedGame.optional(),
+  stations: z.array(z.object({ id: z.string(), prop: z.string(), anchor, label: z.string() })).max(9),
   items: z.array(z.object({ id: z.string(), prop: z.string(), anchor: z.string(), label: z.string() })).max(12),
   decor: z.array(z.object({ prop: z.string(), anchor })).max(8).default([]),
   npcs: z.array(z.object({
@@ -72,14 +98,14 @@ export const Blueprint = z.object({
     outfit: z.enum(['scrubs', 'labCoat', 'apron', 'coverall', 'suit', 'casual', 'hivis']).default('casual'),
     lines: z.object({ intro: z.string(), done: z.string() }),
   })).min(1).max(3),
-  objectives: z.array(Objective).min(3).max(10),
+  objectives: z.array(Objective).max(10),
   event: z.object({
     after: z.string(), // objective id
     delaySec: z.number().min(0).max(20).default(3),
     announce: z.object({ npc: npcRef, text: z.string() }),
     close: z.string().optional(), // station id that becomes unusable
     replaceRemaining: z.array(Objective).min(1).max(6), // new objectives that replace everything after `after`
-  }),
+  }).optional(),
   facts: z.array(z.string()).min(2).max(6),
 });
 

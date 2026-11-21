@@ -117,7 +117,7 @@ function loop() {
       stopTracking();
       cam.status = 'error';
       cam.error = 'Body tracking stopped. Retry the camera.';
-      console.warn('[webcam] Leg tracking paused', error);
+      console.warn('[webcam] Pose tracking paused', error);
       return;
     }
     body = poseFrame;
@@ -136,7 +136,9 @@ export function stopTracking() {
   cam.frame = null;
   cam.enabled = false;
   cam.calibrated = false;
+  cam.movement = 'frame';
   cam.moveUntil = 0; cam.runUntil = 0; cam.turn = 0; cam.palmPush = false; cam.wheel = 0;
+  cam.guard = false;
   cam.status = 'off';
 }
 
