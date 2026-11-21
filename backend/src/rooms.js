@@ -16,7 +16,7 @@ export class Room {
     this.deps = deps; // { catalog, demos, log }
     this.status = 'generating';
     this.error = null;
-    this.source = null; // 'gemini' | 'demo'
+    this.source = null; // 'openai' | 'demo'
     this.blueprint = null;
     this.state = null;
     this.clients = new Map(); // ws -> { playerId, name, joined }
@@ -52,7 +52,7 @@ export class Room {
     this.broadcast(this.statusMsg());
     const r = await generator.generate(this.occupation);
     if (token !== this.genToken) return r;
-    if (r.ok) this.setBlueprint(r.blueprint, 'gemini');
+    if (r.ok) this.setBlueprint(r.blueprint, 'openai');
     else this.fail(r.error || 'generation failed');
     return r;
   }

@@ -7,9 +7,9 @@ Shared, pure, framework-free code lives in `frontend/src/shared/` (ESM, no React
 
 ## Flow
 1. Lobby: player types an occupation (or picks a suggested job). Frontend `POST {BACKEND}/api/rooms { occupation }`.
-2. Backend creates a room immediately, returns `{ roomId, inviteUrl }`, and generates a blueprint with ONE Gemini call (model from `GEMINI_MODEL`, default `gemini-3.5-flash`) using the catalog + layout as the menu. Validate with `Blueprint` (schema.js) plus `validateBlueprint` (semantic). One retry with the errors if invalid. Cache by normalised occupation. On failure or > 8 s: room status `failed`, host can pick a demo shift.
+2. Backend creates a room immediately, returns `{ roomId, inviteUrl }`, and generates a blueprint with one OpenAI Responses API call (model from `OPENAI_MODEL`, default `gpt-6.2-astra`) using the catalog + layout as the menu. Validate with `Blueprint` (schema.js) plus `validateBlueprint` (semantic). One retry with the errors if invalid. Cache by normalised occupation. On failure or when the generation budget expires, room status is `failed` and the host can pick a demo shift. The lobby also offers demos after eight seconds.
 3. Clients connect `ws://{BACKEND}/room/{roomId}`; server is authoritative for task state (N3); 20 snapshots/s.
-4. Frontend builds the scene: shell (by `blueprint.shell`) + recipes placed at anchors, NPCs at spots, player spawns at `SPAWN`.
+4. The frontend builds the scene from `blueprint.shell` and `blueprint.venue`, then places recipes at anchors and NPCs at spots. Players spawn at `SPAWN`. The venue can be enclosed, open-front, or outdoors with boundary rails. It also specifies a floor material, palette, lighting, and venue sign.
 5. Play: verbs grab / place / press / talk, with optional skill checks. Event director fires once. Review screen at the end.
 
 ## Files

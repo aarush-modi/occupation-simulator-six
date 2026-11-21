@@ -9,7 +9,7 @@ import { connect, chooseDemo, fetchRoom, fetchDemos, localPose, reconcile, sampl
 import { act, use, getIndex } from './actions';
 import { staticInteractables, RECIPES } from './world';
 import { recipeColliders, shellColliders, ShellLighting } from './scene';
-import World from './World';
+import World from './World.jsx';
 import { LabelLayer, LabelProjector } from './Labels';
 import LocalPlayer from './LocalPlayer';
 import Hud, { ui, KEYFRAMES } from './Hud';
@@ -69,7 +69,6 @@ function useDebugHook() {
         if (!it) return null;
         return window.__shift.goto(it.pos, standoff);
       },
-      pressE: () => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e' })); window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyE', key: 'e' })); },
     };
   }, []);
 }
@@ -87,7 +86,7 @@ function Game() {
     <div style={{ position: 'fixed', inset: 0, background: '#000' }}>
       <Canvas shadows="soft" flat dpr={[1, 2]} camera={{ fov: 72, near: 0.05, far: 200, position: [0, 1.62, 4.3] }} gl={{ antialias: false, powerPreference: 'high-performance' }}>
         <Suspense fallback={null}>
-          <ShellLighting id={bp.shell} />
+          <ShellLighting id={bp.shell} venue={bp.venue} />
           <World />
           <LabelProjector />
           <LocalPlayer colliders={colliders} />

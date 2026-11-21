@@ -4,7 +4,7 @@
 // an anchor footprint. Wall-hugging dressing stays within WALL_MARGIN of the wall; anything that stands on the
 // floor uses one of the fixed FLOOR_SLOTS so the colliders below are exact for every shell.
 import * as THREE from 'three';
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Environment, Lightformer } from '@react-three/drei';
 import { M } from '../game/materials';
 import { B, C, S, Lathe, Tube } from '../game/parts';
@@ -249,6 +249,20 @@ const WIN_SIDE = { c: 2.9, w: 2.4, y0: 1.05, y1: 2.65 }; // free wall zone betwe
 const DOOR = { c: 0, w: 1.8, y0: 0, y1: 2.2 };
 
 const CFG = {
+  sushi: {
+    floor: { tex: 'planks', opts: { seed: 91, n: 12, color: '#a77b52', vary: 0.11, gap: '#4a3025' }, span: 2.1, rough: 0.5, clearcoat: 0.27, bumpScale: 0.9 },
+    wall: { tex: 'plaster', opts: { seed: 92, color: '#e9d7b9' }, span: 2.6, rough: 0.88, bumpScale: 0.43 },
+    dado: { y: 1.12, tex: 'planks', opts: { seed: 93, n: 8, color: '#664230', vary: 0.13, gap: '#321f18' }, span: 1.4, rough: 0.62, rail: 'woodDark' },
+    ceiling: { tex: 'planks', opts: { seed: 94, n: 9, color: '#554233', vary: 0.10, gap: '#38291f' }, span: 2.4, rough: 0.8 },
+    beams: 'woodDark',
+    skirting: { m: 'woodDark', h: 0.12 },
+    counter: { style: 'cabinet', body: 'woodDark', front: 'woodLight', top: 'woodLight', handle: 'brass', noShelves: true },
+    lights: { kind: 'lantern', color: '#ffcf91' },
+    windows: { W: [WIN_SIDE], E: [WIN_SIDE] },
+    door: { m: 'woodDark', glass: true },
+    frame: 'woodDark',
+    light: { warm: '#ffc995', cool: '#dce8ff', hemi: ['#ffe9cf', '#5c4131', 0.68], key: 2.12, fill: 0.65, point: 7, env: '#412d28' },
+  },
   cafe: {
     floor: { tex: 'tiles', opts: { seed: 11, nx: 10, ny: 10, color: ['#8c6a5b', '#836152', '#93715f', '#7b5a4b'], vary: 0.05, grout: '#5e5249', groutPx: 5 }, span: 2, rough: 0.62, clearcoat: 0.12, ccRough: 0.4, bumpScale: 1.5 },
     wall: { tex: 'plaster', opts: { seed: 12, color: '#eadcc6' }, span: 3, rough: 0.9, bumpScale: 0.6 },
@@ -654,6 +668,22 @@ const PANELS = (() => {
 function CeilingLights({ cfg }) {
   const kind = cfg.lights.kind;
   const glow = glowMat('ceil:' + cfg.lights.color, cfg.lights.color, kind === 'panel' ? 1.5 : 2.6);
+  if (kind === 'lantern') {
+    const paper = glowMat('sushi-paper', '#ffdcb0', 1.45);
+    const rib = flat('sushi-lantern-rib', '#97725a', { rough: 0.85 });
+    const levels = [-0.18, -0.12, -0.06, 0, 0.06, 0.12, 0.18];
+    return [-3.9, -1.95, 0, 1.95, 3.9].flatMap(x => [-2.65, 1.45].map(z => (
+      <group key={`${x}:${z}`} position={[x, 2.69, z]}>
+        <C rt={0.011} h={0.48} p={[0, 0.47, 0]} m={M.black} seg={8} />
+        <C rt={0.122} h={0.045} p={[0, 0.223, 0]} m={M.woodDark} seg={24} />
+        <C rt={0.113} h={0.042} p={[0, -0.224, 0]} m={M.woodDark} seg={24} />
+        <mesh scale={[0.183, 0.232, 0.183]} material={paper}><sphereGeometry args={[1, 24, 16]} /></mesh>
+        {levels.map(y => <mesh key={y} position={[0, y, 0]} rotation-x={PI / 2} material={rib}>
+          <torusGeometry args={[0.183 * Math.sqrt(1 - (y / 0.232) ** 2) + 0.001, 0.0025, 6, 28]} />
+        </mesh>)}
+      </group>
+    )));
+  }
   if (kind === 'panel') {
     return PANELS.map(([x, z], i) => (
       <group key={i} position={[x, H, z]}>
@@ -1152,6 +1182,40 @@ function Dressing({ id, cfg }) {
   if (cfg.services) common.push(<NoCast key="svc"><Services /></NoCast>);
 
   switch (id) {
+    case 'sushi': {
+      const indigo = flat('sushi-indigo', '#253e51', { rough: 0.94 });
+      const title = signTexture('sushi-noren', {
+        w: 528, h: 430, bg: '#253e51',
+        lines: [{ text: '寿司', size: 0.32, y: 0.42, weight: 700, color: '#f0dfbe' },
+          { text: 'SUSHI BAR', size: 0.10, y: 0.73, weight: 700, color: '#f0dfbe' }],
+      });
+      const menu = (title, items) => signTexture(`sushi-menu:${title}`, {
+        w: 640, h: 410, bg: '#e4caa2', border: '#ae7f53',
+        lines: [{ text: title, size: 0.17, y: 0.2, font: SERIF, weight: 700, color: '#423329' },
+          ...items.map((text, i) => ({ text, size: 0.105, y: 0.43 + i * 0.16, color: '#52382a' }))],
+      });
+      return (
+        <group>
+          <NoCast>
+            {[-5.1, -3.65, 3.65, 5.1].map(x => <group key={x} position={[x, 2.04, -HZ]}>
+              <B s={[1.29, 2.26, 0.038]} p={[0, 0, 0.043]} m={M.paper} round={0.005} />
+              {[-0.65, -0.22, 0.22, 0.65].map(v => <B key={v} s={[0.037, 2.32, 0.06]} p={[v, 0, 0.071]} m={M.woodDark} round={0.003} />)}
+              {[-1.15, -0.57, 0, 0.57, 1.15].map(y => <B key={y} s={[1.34, 0.036, 0.061]} p={[0, y, 0.071]} m={M.woodDark} round={0.003} />)}
+            </group>)}
+            <group position={[0, 2.5, -HZ + 0.105]}>
+              <C rt={0.025} h={3.28} p={[0, 0.59, 0]} r={[0, 0, PI / 2]} m={M.woodDark} seg={16} />
+              {[-1.04, 0, 1.04].map(x => <B key={x} s={[1.012, 1.10, 0.02]} p={[x, 0, 0.004]} m={indigo} round={0.009} />)}
+              <WallSign p={[0, 0, 0.013]} w={0.95} h={0.88} k="sushi-shop-sign" tex={title} />
+            </group>
+          </NoCast>
+          {wallPanel('E', -4.26, 2.12, 'sushi-menu-left', menu('At the counter', ['Salmon nigiri', 'Tuna maki', 'Cucumber maki']), 1.92, 1.13, 'woodDark')}
+          {wallPanel('W', -4.26, 2.12, 'sushi-menu-right', menu('From the kitchen', ['Miso soup', 'Edamame', 'Green tea']), 1.92, 1.13, 'woodDark')}
+          <Plant p={slot('C1')} seed={33} pot={M.tileDark} />
+          <Plant p={slot('C2')} seed={48} pot={M.ceramic} />
+          {common}
+        </group>
+      );
+    }
     case 'cafe': {
       const menu = (k, title, items) => signTexture('menu:' + k, {
         w: 1024, h: 560, bg: '#1e2320', border: '#cfc7b4',
@@ -1356,34 +1420,122 @@ function HazardFloor() {
 
 // ---------------------------------------------------------------------------------------------------------------
 
-export default function Shell({ id = 'cafe', cutaway = false }) {
-  const cfg = CFG[id] ?? CFG.cafe;
+const VENUE_FLOORS = {
+  timber: { tex: 'planks', opts: { seed: 104, n: 10, color: '#9e7655', gap: '#3b2c22' }, span: 2.6, rough: 0.58 },
+  tile: { tex: 'tiles', opts: { seed: 105, nx: 4, ny: 4, color: ['#e2dfd2', '#d3cfc3'], grout: '#8c8d83' }, span: 1.7, rough: 0.51 },
+  rubber: { tex: 'chips', opts: { seed: 106, color: '#455256', chipColors: ['#737f7d', '#343d40'], n: 4900 }, span: 1.25, rough: 0.89 },
+  concrete: { tex: 'concrete', opts: { seed: 107, color: '#8e8e83' }, span: 4, rough: 0.75 },
+  gravel: { tex: 'chips', opts: { seed: 108, color: '#786c5b', chipColors: ['#a99981', '#574f44', '#948675'], n: 9000 }, span: 1.5, rough: 0.99 },
+  grass: { tex: 'carpet', opts: { seed: 109, color: '#51734a', alt: '#344c30' }, span: 1.8, rough: 0.99 },
+};
+
+const VENUE_WALLS = {
+  warm: '#ebd2af', coastal: '#c4d8d7', forest: '#a9bd9f',
+  industrial: '#adb4b8', clinical: '#e9eeee', bold: '#a1a7cb',
+};
+
+const VENUE_LIGHTS = {
+  daylight: { color: '#e8f2ff', warm: '#fff2dc', cool: '#c7e5ff', key: 2.65, fill: 1.2, sky: '#b4d7ea' },
+  warm: { color: '#ffdeb3', warm: '#ffd2a0', cool: '#e1e7ef', key: 2.2, fill: 0.78, sky: '#dfb696' },
+  task: { color: '#f7faff', warm: '#fff1dc', cool: '#e1eeff', key: 2.6, fill: 1.07, sky: '#a6c7db' },
+  dusk: { color: '#f3d9cd', warm: '#ffac78', cool: '#a7b0e0', key: 1.55, fill: 0.65, sky: '#706c91' },
+};
+
+function VenueBoundary({ sides, outdoor }) {
+  const rail = outdoor ? M.woodDark : M.stainless;
+  return sides.map((side) => {
+    const { p, r } = onWall(side, 0, 0, 0.03);
+    const span = side === 'E' || side === 'W' ? D : W;
+    const segments = Math.ceil(span / 1.6);
+    return (
+      <group key={side} position={p} rotation={r}>
+        <B s={[span, 0.09, 0.1]} p={[0, 0.9, 0]} m={rail} round={0.012} />
+        <B s={[span, 0.055, 0.07]} p={[0, 0.38, 0]} m={rail} round={0.006} />
+        {Array.from({ length: segments + 1 }, (_, i) =>
+          <B key={i} s={[0.09, 0.94, 0.09]} p={[i * (span - 0.16) / segments - (span - 0.16) / 2, 0.47, 0]} m={rail} round={0.012} />)}
+      </group>
+    );
+  });
+}
+
+function VenueSign({ name, outdoor }) {
+  const map = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 768;
+    canvas.height = 128;
+    const g = canvas.getContext('2d');
+    g.fillStyle = '#223844';
+    g.fillRect(0, 0, 768, 128);
+    g.strokeStyle = '#d0a572';
+    g.lineWidth = 3;
+    g.strokeRect(8, 8, 752, 112);
+    g.fillStyle = '#f8eada';
+    g.font = '700 52px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(name, 384, 65, 700);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, [name]);
+  useEffect(() => () => map.dispose(), [map]);
+  return (
+    <group position={[0, outdoor ? 1.88 : 3.22, -HZ + 0.11]}>
+      {outdoor && [-1.28, 1.28].map(x =>
+        <B key={x} s={[0.10, 2.0, 0.10]} p={[x, -0.93, -0.04]} m={M.woodDark} round={0.005} />)}
+      <B s={[2.82, 0.39, 0.04]} m={M.woodDark} round={0.012} />
+      <mesh position={[0, 0, 0.023]}>
+        <planeGeometry args={[2.73, 0.34]} />
+        <meshBasicMaterial map={map} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+export default function Shell({ id = 'cafe', venue, cutaway = false }) {
   const sid = CFG[id] ? id : 'cafe';
+  const native = CFG[sid];
+  const floor = VENUE_FLOORS[venue?.floor] ?? native.floor;
+  const wallColor = VENUE_WALLS[venue?.palette];
+  const wall = wallColor ? { tex: 'plaster', opts: { seed: 111, color: wallColor }, span: 2.6, rough: 0.88 } : native.wall;
+  const outdoor = venue?.enclosure === 'outdoor';
+  const openFront = venue?.enclosure === 'open_front';
+  const areas = cutaway ? ['N', 'E', 'W'] : ['N', 'S', 'E', 'W'];
+  const walls = outdoor ? [] : areas.filter(side => !openFront || side !== 'S');
+  const fence = outdoor ? areas : openFront && !cutaway ? ['S'] : [];
+  const cfg = { ...native, floor, wall, counter: outdoor || openFront ? { ...native.counter, noShelves: true, splash: null } : native.counter };
+  const materialId = `${sid}:${venue?.floor ?? 'native'}:${venue?.palette ?? 'native'}`;
   return (
     <group name={`shell-${sid}`}>
-      <Floor id={sid} cfg={cfg} />
+      {(outdoor || openFront) && <Slab s={[180, 0.10, 180]} p={[0, -0.19, 0]} mat={M.soil} />}
+      <Floor id={materialId} cfg={cfg} />
       <NoCast>
-        {!cutaway && <Ceiling id={sid} cfg={cfg} />}
-        {!cutaway && <CeilingLights cfg={cfg} />}
-        {(cutaway ? ['N', 'E', 'W'] : ['N', 'S', 'E', 'W']).map((s) => <Wall key={s} id={sid} cfg={cfg} side={s} />)}
+        {!outdoor && !cutaway && <Ceiling id={sid} cfg={cfg} />}
+        {!outdoor && !cutaway && <CeilingLights cfg={cfg} />}
+        {walls.map(side => <Wall key={side} id={materialId} cfg={cfg} side={side} />)}
       </NoCast>
+      <VenueBoundary sides={fence} outdoor={outdoor} />
       {SUPPLY_COUNTERS.map((c, i) => <SupplyCounter key={i} id={sid} cfg={cfg} c={c} />)}
-      <Dressing id={sid} cfg={cfg} />
+      {!outdoor && !openFront && <Dressing id={sid} cfg={cfg} />}
+      {venue?.name && <VenueSign name={venue.name} outdoor={outdoor} />}
     </group>
   );
 }
 
 // Interior light rig (replaces the outdoor Lighting from game/Look.jsx). Real lights: hemisphere, shadowed key,
 // window fill, two ceiling points = 5.
-export function ShellLighting({ id = 'cafe' }) {
+export function ShellLighting({ id = 'cafe', venue }) {
   const cfg = CFG[id] ?? CFG.cafe;
-  const L = cfg.light;
+  const outdoor = venue?.enclosure === 'outdoor';
+  const visibleSky = outdoor || venue?.enclosure === 'open_front';
+  const variation = VENUE_LIGHTS[venue?.lighting] ?? (outdoor ? VENUE_LIGHTS.daylight : null);
+  const L = { ...cfg.light, ...variation };
   const winSide = cfg.windows.W ? -1 : cfg.windows.E ? 1 : 0;
   const fillPos = L.fromFront ? [0, 4, 14] : winSide ? [winSide * 14, 4, 2.9] : [0, 6, -12];
-  const ceil = cfg.lights.color;
+  const ceil = variation?.color ?? cfg.lights.color;
   return (
     <>
-      <color attach="background" args={['#0c0c0d']} />
+      <color attach="background" args={[visibleSky ? L.sky ?? '#b4d7ea' : '#0c0c0d']} />
       <hemisphereLight args={[L.hemi[0], L.hemi[1], L.hemi[2]]} />
       <directionalLight
         color={ceil}
@@ -1402,8 +1554,8 @@ export function ShellLighting({ id = 'cafe' }) {
         shadow-camera-far={25}
       />
       <directionalLight color={L.cool} intensity={L.fill} position={fillPos} />
-      <pointLight color={L.warm} intensity={L.point} position={[-3.2, 2.3, 0.2]} distance={14} decay={2} />
-      <pointLight color={L.warm} intensity={L.point} position={[3.2, 2.3, 0.2]} distance={14} decay={2} />
+      <pointLight color={L.warm} intensity={outdoor ? 0 : L.point} position={[-3.2, 2.3, 0.2]} distance={14} decay={2} />
+      <pointLight color={L.warm} intensity={outdoor ? 0 : L.point} position={[3.2, 2.3, 0.2]} distance={14} decay={2} />
       <Environment resolution={256} frames={1} environmentIntensity={0.9}>
         <color attach="background" args={[L.env]} />
         {/* ceiling fixtures */}

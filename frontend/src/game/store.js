@@ -10,7 +10,7 @@ export const STEPS = {
   choke: { title: 'Trim pressure at the choke manifold', hint: 'Hold the needle in the green.' },
   wait: { title: 'Stand by for the next connection', hint: 'Driller is circulating.' },
   kickGuard: { title: 'KICK! Lift the BOP panel guard', hint: 'BOP control panel by the doghouse.' },
-  kickButton: { title: 'KICK! Close the annular preventer', hint: 'Hold E on the red button.' },
+  kickButton: { title: 'KICK! Close the annular preventer', hint: 'Push your palm forward while looking at the red button.' },
   kickChoke: { title: 'KICK! Bleed pressure through pump 2 line', hint: 'Choke manifold. Harder this time.' },
   judgment: { title: 'Report to Rhodes', hint: 'He wants a word.' },
   done: { title: 'Shift complete', hint: '' },

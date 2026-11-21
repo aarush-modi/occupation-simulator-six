@@ -11,5 +11,5 @@ const { server } = createApp({ catalog: CATALOG, demos, generator });
 
 server.listen(port, '0.0.0.0', () => {
   console.log(`Workshift backend listening on http://${lanAddress()}:${server.address().port}`);
-  console.log(`catalog ${CATALOG.length} recipes, demos [${demos.map((d) => d.id).join(', ')}], model ${generator.model}${process.env.GEMINI_API_KEY ? '' : ' (GEMINI_API_KEY missing)'}`);
+  console.log(`catalog ${CATALOG.length} recipes, demos [${demos.map((d) => d.id).join(', ')}], model ${generator.model}${process.env.OPENAI_API_KEY ? '' : ' (OPENAI_API_KEY missing)'}`);
 });

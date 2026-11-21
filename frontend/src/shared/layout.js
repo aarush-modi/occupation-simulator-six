@@ -5,6 +5,7 @@
 export const ROOM = { W: 14, D: 11, H: 3.4 };
 
 export const SHELLS = {
+  sushi: 'Neighborhood sushi bar with timber floors, indigo noren, paper lanterns, a sushi prep line and a guest counter',
   cafe: 'Cafe or restaurant kitchen: tiled floor, warm lights, counters',
   warehouse: 'Warehouse or distribution centre: concrete floor, high racks, loading door',
   shop: 'Retail shop or florist or pharmacy: wood floor, display counters, shopfront window',

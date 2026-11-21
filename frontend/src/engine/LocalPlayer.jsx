@@ -1,5 +1,5 @@
 'use client';
-// First-person local player for generated shifts: WASD / mouse or webcam lean + head turn, collisions against the
+// First-person local player for generated shifts: webcam steps and head turns, collisions against the
 // shell and placed recipes, visible hands (tracked by the webcam when on), the held prop in view, and crosshair
 // focus picking over the interactables derived from blueprint + authoritative state.
 import * as THREE from 'three';
@@ -13,12 +13,11 @@ import { Prop } from './scene';
 import { M } from '../game/materials';
 import { B } from '../game/parts';
 import { footstep } from '../game/audio';
-import { cam, onGesture } from '../game/webcam/gestures';
+import { cam, onGesture, webcamPace } from '../game/webcam/gestures';
 
 export const EYE = 1.62;
 const RADIUS = 0.3;
 const REACH = 2.4;
-const keys = {};
 const tmpV = new THREE.Vector3(), fwdV = new THREE.Vector3();
 
 export function collide(p, colliders) {
@@ -52,7 +51,7 @@ function interactKey(s) {
 }
 
 export default function LocalPlayer({ colliders }) {
-  const { camera, gl } = useThree();
+  const { camera } = useThree();
   const yaw = useRef(0), pitch = useRef(0);
   const pos = useRef(new THREE.Vector3());
   const vel = useRef(new THREE.Vector3());
@@ -77,50 +76,17 @@ export default function LocalPlayer({ colliders }) {
     yaw.current = f.rotY;
   }, [camera]);
 
-  useEffect(() => {
-    const canPlay = () => { const s = useShift.getState(); return s.started && s.state?.phase === 'play' && !s.skill; };
-    const relock = () => { if (canPlay() && !cam.enabled) gl.domElement.requestPointerLock?.()?.catch?.(() => {}); };
-    window.__relock = relock;
-    const onMove = (e) => {
-      if (document.pointerLockElement !== gl.domElement || useShift.getState().skill) return;
-      yaw.current -= e.movementX * 0.0022;
-      pitch.current = THREE.MathUtils.clamp(pitch.current - e.movementY * 0.0022, -1.35, 1.35);
-    };
-    const down = (e) => {
-      if (e.target?.tagName === 'INPUT') return;
-      keys[e.code] = true;
-      if (e.code === 'KeyE' && !e.repeat && canPlay()) {
-        const f = useShift.getState().focus;
-        if (f) use(f);
-      }
-    };
-    const up = (e) => { keys[e.code] = false; };
-    const blur = () => { for (const k in keys) keys[k] = false; };
-    const click = () => relock();
-    const offG = onGesture((name) => {
-      if (!canPlay()) return;
-      const f = useShift.getState().focus;
-      if (!f || !(KIND_GESTURES[f.kind] ?? []).includes(name)) return;
-      // Opening the hand right after a grab is the grab finishing, not a request to put it down.
-      if (name === 'release' && performance.now() - lastGrabAt < 1200) return;
-      use(f);
-    });
-    document.addEventListener('mousemove', onMove);
-    window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    window.addEventListener('blur', blur);
-    gl.domElement.addEventListener('click', click);
-    return () => {
-      document.removeEventListener('mousemove', onMove);
-      window.removeEventListener('keydown', down);
-      window.removeEventListener('keyup', up);
-      window.removeEventListener('blur', blur);
-      gl.domElement.removeEventListener('click', click);
-      offG();
-    };
-  }, [gl]);
+  useEffect(() => onGesture((name) => {
+    const s = useShift.getState();
+    if (!s.started || s.state?.phase !== 'play' || s.skill) return;
+    const f = s.focus;
+    if (!f || !(KIND_GESTURES[f.kind] ?? []).includes(name)) return;
+    // Opening the hand immediately after a grab finishes that gesture.
+    if (name === 'release' && performance.now() - lastGrabAt < 1200) return;
+    use(f);
+  }), []);
 
-  useFrame((state, dtRaw) => {
+  useFrame((_, dtRaw) => {
     const dt = Math.min(dtRaw, 0.05);
     const s = useShift.getState();
     // server-side position (first welcome, or a large correction)
@@ -135,28 +101,17 @@ export default function LocalPlayer({ colliders }) {
       reconcile.yaw = null; reconcile.pitch = null;
     }
     const frozen = !s.started || s.state?.phase !== 'play' || !!s.skill;
-    const sprint = keys.ShiftLeft || keys.ShiftRight;
+    const pace = frozen ? 0 : webcamPace();
     const held = s.state?.players?.[s.you]?.held ?? null;
-    const maxSpeed = sprint ? 4.6 : 3.0;
-    const f = tmpV.set(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
-    const rx = -f.z, rz = f.x;
-    let wx = 0, wz = 0;
-    if (!frozen) {
-      if (keys.KeyW || keys.ArrowUp) { wx += f.x; wz += f.z; }
-      if (keys.KeyS || keys.ArrowDown) { wx -= f.x; wz -= f.z; }
-      if (keys.KeyD || keys.ArrowRight) { wx += rx; wz += rz; }
-      if (keys.KeyA || keys.ArrowLeft) { wx -= rx; wz -= rz; }
-    }
     const camOn = cam.enabled && cam.calibrated;
     if (!frozen && camOn) {
-      if (Math.abs(cam.forward) > 0.01) { wx += f.x * cam.forward; wz += f.z * cam.forward; }
       yaw.current += cam.turn * dt;
       pitch.current = THREE.MathUtils.damp(pitch.current, cam.pitch, 5, dt);
     }
-    const wl = Math.hypot(wx, wz);
-    if (wl > 1) { wx /= wl; wz /= wl; }
-    vel.current.x = THREE.MathUtils.damp(vel.current.x, wx * maxSpeed, 10, dt);
-    vel.current.z = THREE.MathUtils.damp(vel.current.z, wz * maxSpeed, 10, dt);
+    const speedTarget = pace === 2 ? 4.4 : pace === 1 ? 2.25 : 0;
+    const f = tmpV.set(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
+    vel.current.x = THREE.MathUtils.damp(vel.current.x, f.x * speedTarget, pace ? 14 : 21, dt);
+    vel.current.z = THREE.MathUtils.damp(vel.current.z, f.z * speedTarget, pace ? 14 : 21, dt);
     pos.current.addScaledVector(vel.current, dt);
     collide(pos.current, colliders);
 
@@ -164,9 +119,7 @@ export default function LocalPlayer({ colliders }) {
     bob.current += speed * dt * 2.1;
     stepAcc.current += speed * dt;
     if (stepAcc.current > 0.75) { stepAcc.current = 0; footstep(); }
-    // N7: no forced camera bob from webcam movement; a light bob for keyboard walking only
-    const bobY = camOn ? 0 : Math.sin(bob.current * 2) * 0.018 * Math.min(speed / 3, 1);
-    camera.position.set(pos.current.x, EYE + bobY, pos.current.z);
+    camera.position.set(pos.current.x, EYE, pos.current.z);
     camera.rotation.set(pitch.current, yaw.current, 0);
 
     localPose.pos[0] = pos.current.x; localPose.pos[1] = 0; localPose.pos[2] = pos.current.z;
@@ -225,6 +178,7 @@ export default function LocalPlayer({ colliders }) {
 
   const heldId = useShift((s) => s.state?.players?.[s.you]?.held ?? null);
   const heldProp = useShift((s) => (heldId ? s.blueprint?.items?.find((i) => i.id === heldId)?.prop : null));
+  const plated = useShift((s) => s.state?.items?.[heldId]?.tags?.includes('plated') ?? false);
   const recipe = heldProp ? recipeOf(heldProp, 'item') : null;
   const fit = recipe ? Math.min(1, 0.3 / Math.max(...recipe.size)) : 1;
   return (
@@ -239,7 +193,7 @@ export default function LocalPlayer({ colliders }) {
         ))}
         {recipe && (
           <group position={[0, -0.3 - recipe.size[1] * fit * 0.35, -0.55]} rotation={[0.12, 0, 0]} scale={fit}>
-            <Prop recipe={recipe} />
+            <Prop recipe={recipe} plated={plated} />
           </group>
         )}
       </group>

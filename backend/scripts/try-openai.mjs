@@ -1,4 +1,4 @@
-// Manual check: node --env-file-if-exists=.env scripts/try-gemini.mjs barista beekeeper
+// Manual check: node --env-file-if-exists=.env scripts/try-openai.mjs barista beekeeper
 import { CATALOG } from '../src/catalog.js';
 import { loadDemos, pickDemo } from '../src/demos.js';
 import { createGenerator } from '../src/generate.js';

@@ -1,6 +1,8 @@
 // Pure gesture + head-control engine. Input: MediaPipe landmarks (normalized image coords, unmirrored).
 // Output: continuous control values in `cam` and discrete gesture events via onGesture().
 
+import { createLegGait } from './legGait.js';
+
 export const cam = {
   enabled: false,
   calibrated: false,
@@ -8,7 +10,8 @@ export const cam = {
   error: null,
   face: false,
   hands: 0,
-  forward: 0, // -0.6..1 from lean
+  moveUntil: 0,
+  runUntil: 0,
   turn: 0, // rad/s, + = turn left
   pitch: 0, // target pitch (rad)
   wheel: 0, // accumulated wheel input, consumed by skills
@@ -17,12 +20,16 @@ export const cam = {
   frame: null, // last raw frame for the preview
 };
 
+export function webcamPace(now = performance.now()) {
+  if (!cam.enabled || now >= cam.moveUntil) return 0;
+  return now < cam.runUntil ? 2 : 1;
+}
+
 const listeners = new Set();
 export function onGesture(cb) { listeners.add(cb); return () => listeners.delete(cb); }
 
 export const TUNE = {
-  leanFwd: 1.08, leanFwdFull: 1.22, leanBack: 0.92, leanBackFull: 0.82,
-  yawDead: 0.07, yawGain: 5.0, turnMax: 1.6,
+  yawDead: 0.04, yawGain: 8, turnMax: 2.0,
   pitchGain: 3.2, pitchMax: 0.7,
   fingerExt: 1.15, // tip-to-wrist vs pip-to-wrist ratio for an extended finger
   palmPush: 0.95, // palm length / face width when pushed toward the camera
@@ -72,6 +79,7 @@ export function createGestureEngine(now = () => performance.now()) {
   let prevFist = [false, false];
   let prevRoll = null;
   let calibUntil = 0;
+  const gait = createLegGait();
 
   function emit(name, t) {
     if (last[name] && t - last[name] < TUNE.cooldownMs) return;
@@ -88,15 +96,27 @@ export function createGestureEngine(now = () => performance.now()) {
 
   return {
     // Calibration needs both a minimum time and enough face samples, so a slow model warm-up can't leave it stuck.
-    calibrate(ms = 1500) { base.width = 0; base.yaw = 0; base.pitch = 0; base.n = 0; calibUntil = now() + ms; cam.calibrated = false; cam.status = 'calibrating'; },
+    calibrate(ms = 1500) {
+      base.width = 0; base.yaw = 0; base.pitch = 0; base.n = 0;
+      calibUntil = now() + ms;
+      cam.calibrated = false;
+      cam.status = 'calibrating';
+      cam.moveUntil = 0;
+      cam.runUntil = 0;
+      gait.reset();
+    },
     get calibrating() { return !cam.calibrated; },
     base,
-    update(faceLm, handsLm) {
+    update(faceLm, handsLm, pose) {
       const t = now();
       const face = faceLm ? faceFeatures(faceLm) : null;
       const hands = (handsLm || []).map(handFeatures);
       cam.face = !!face;
       cam.hands = hands.length;
+      if (pose !== undefined) {
+        gait.update(pose, t);
+        Object.assign(cam, gait.deadlines);
+      }
 
       // calibration: average neutral face until the time has passed and we have 20 samples
       if (!cam.calibrated && (t < calibUntil || base.n < 20)) {
@@ -106,7 +126,7 @@ export function createGestureEngine(now = () => performance.now()) {
           base.yaw += (face.yaw - base.yaw) / base.n;
           base.pitch += (face.pitch - base.pitch) / base.n;
         }
-        cam.forward = 0; cam.turn = 0;
+        cam.turn = 0;
         return;
       }
       if (!cam.calibrated) { cam.calibrated = true; cam.status = 'tracking'; }
@@ -114,17 +134,14 @@ export function createGestureEngine(now = () => performance.now()) {
       // head controls
       if (face) {
         cam.status = 'tracking';
-        const r = face.width / base.width;
-        if (r > TUNE.leanFwd) cam.forward = Math.min(1, (r - TUNE.leanFwd) / (TUNE.leanFwdFull - TUNE.leanFwd));
-        else if (r < TUNE.leanBack) cam.forward = -0.6 * Math.min(1, (TUNE.leanBack - r) / (TUNE.leanBack - TUNE.leanBackFull));
-        else cam.forward = 0;
         const dy = face.yaw - base.yaw;
         const mag = Math.max(0, Math.abs(dy) - TUNE.yawDead);
-        cam.turn = Math.sign(dy) * Math.min(TUNE.turnMax, mag * TUNE.yawGain);
+        const turn = Math.sign(dy) * Math.min(TUNE.turnMax, mag * TUNE.yawGain);
+        cam.turn = turn ? cam.turn + (turn - cam.turn) * 0.45 : 0;
         cam.pitch = Math.max(-TUNE.pitchMax, Math.min(TUNE.pitchMax, -(face.pitch - base.pitch) * TUNE.pitchGain));
       } else {
         cam.status = 'lost';
-        cam.forward = 0; cam.turn = 0;
+        cam.turn = 0;
       }
 
       // history for motion gestures

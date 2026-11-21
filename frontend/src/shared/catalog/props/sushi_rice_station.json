@@ -3,6 +3,7 @@
  "name": "Sushi rice station",
  "kind": "station",
  "shells": [
+  "sushi",
   "cafe"
  ],
  "tags": [

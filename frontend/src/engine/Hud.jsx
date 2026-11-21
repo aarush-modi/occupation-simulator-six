@@ -8,7 +8,7 @@ import { createRoom } from './net';
 import { KIND_GESTURES } from './world';
 import { Timing, Steady, PressHold } from '../game/Hud';
 import WebcamPanel from '../game/webcam/WebcamPanel';
-import { cam, GESTURE_HINT } from '../game/webcam/gestures';
+import { cam, GESTURE_HINT, onGesture } from '../game/webcam/gestures';
 import { startAudio } from '../game/audio';
 
 export const ui = {
@@ -84,7 +84,7 @@ function Prompt() {
       {label && !skill && (
         <div style={{ position: 'absolute', left: '50%', top: '57%', transform: 'translateX(-50%)', padding: '8px 14px', ...ui.panel, color: '#fff', fontSize: 15, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <span style={{ background: ui.accent, color: '#111', fontWeight: 800, borderRadius: 4, padding: '1px 7px' }}>E</span>{label}
+            {label}
           </div>
           {cam.enabled && g && <div style={{ fontSize: 12, color: ui.accent }}>Webcam: {GESTURE_HINT[g] ?? g}</div>}
         </div>
@@ -165,27 +165,19 @@ function Intro() {
   const bp = useShift((s) => s.blueprint);
   const set = useShift((s) => s.set);
   const npc = bp.npcs[0];
-  const start = () => {
+  useEffect(() => onGesture((name) => {
+    if (name !== 'wave') return;
     startAudio();
     set({ started: true });
-    if (!cam.enabled) window.__relock?.();
     if (npc?.lines?.intro) setTimeout(() => useShift.getState().say(npc.name, npc.lines.intro), 400);
-  };
-  useEffect(() => {
-    const k = (e) => { if (e.code === 'Enter') start(); };
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  });
+  }), [set, npc]);
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'radial-gradient(ellipse at center, rgba(10,10,12,0.35), rgba(10,10,12,0.85))', pointerEvents: 'auto' }}>
       <div style={{ textAlign: 'center', color: '#fff', maxWidth: 640, padding: 24 }}>
         <div style={{ fontSize: 13, letterSpacing: 6, color: ui.accent, textTransform: 'uppercase' }}>Workshift · {bp.occupation}</div>
         <div style={{ fontSize: 50, fontWeight: 900, marginTop: 6, letterSpacing: -1, lineHeight: 1.05 }}>{bp.title}</div>
         <div style={{ fontSize: 17, color: '#d8d0c4', marginTop: 14, lineHeight: 1.5 }}>{bp.briefing}</div>
-        <div style={{ marginTop: 22, fontSize: 13, color: '#aaa' }}>WASD move · Mouse look · Shift sprint · E interact · or turn on the webcam</div>
-        <button onClick={start} style={{ marginTop: 24, padding: '14px 38px', fontSize: 18, fontWeight: 800, borderRadius: 10, border: 0, background: ui.accent, color: '#111', cursor: 'pointer' }}>
-          Start shift
-        </button>
+        <div style={{ marginTop: 22, fontSize: 16, color: ui.accent }}>Wave to start the shift</div>
       </div>
     </div>
   );

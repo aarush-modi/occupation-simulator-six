@@ -296,7 +296,7 @@ function BopPanel() {
     if (guard.current) guard.current.rotation.x = THREE.MathUtils.damp(guard.current.rotation.x, guardOpen ? -1.9 : 0, 6, dt);
   });
   useInteract({ id: 'bopGuard', pos: [A.bop[0], 1.25, A.bop[2] + 0.4], r: 0.6, label: () => (step() === 'kickGuard' ? 'Lift the guard' : null), use: F.useBopGuard, gesture: ['swipeUp'] });
-  useInteract({ id: 'bopButton', pos: [A.bop[0], 1.2, A.bop[2] + 0.45], r: 0.5, label: () => (step() === 'kickButton' ? 'HOLD E: Close annular' : null), use: F.useBopButton, gesture: ['palmPush'] });
+  useInteract({ id: 'bopButton', pos: [A.bop[0], 1.2, A.bop[2] + 0.45], r: 0.5, label: () => (step() === 'kickButton' ? 'Close the annular preventer' : null), use: F.useBopButton, gesture: ['palmPush'] });
   return (
     <group position={A.bop}>
       <B s={[1.6, 1.8, 0.6]} p={[0, 0.9, 0]} m={M.red} round={0.05} />

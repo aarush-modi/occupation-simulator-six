@@ -7,7 +7,7 @@ import { useGame, live } from './store';
 import { M } from './materials';
 import { B, C } from './parts';
 import { footstep } from './audio';
-import { cam, onGesture } from './webcam/gestures';
+import { cam, onGesture, webcamPace } from './webcam/gestures';
 
 export function gestureList(it) {
   const g = typeof it.gesture === 'function' ? it.gesture() : it.gesture;
@@ -15,7 +15,6 @@ export function gestureList(it) {
 }
 
 const EYE = 1.65, RADIUS = 0.32;
-const keys = {};
 
 function collide(p) {
   p.x = THREE.MathUtils.clamp(p.x, DECK.minX + 0.5, DECK.maxX - 0.5);
@@ -40,7 +39,7 @@ function collide(p) {
 }
 
 export default function Player() {
-  const { camera, gl } = useThree();
+  const { camera } = useThree();
   const yaw = useRef(0), pitch = useRef(0);
   const pos = useRef(new THREE.Vector3(A.spawn[0], 0, A.spawn[2]));
   const vel = useRef(new THREE.Vector3());
@@ -50,69 +49,28 @@ export default function Player() {
 
   useEffect(() => {
     camera.rotation.order = 'YXZ';
-    window.__lock = () => gl.domElement.requestPointerLock?.();
-    const onMove = (e) => {
-      if (document.pointerLockElement !== gl.domElement) return;
-      if (useGame.getState().skill) return;
-      yaw.current -= e.movementX * 0.0022;
-      pitch.current = THREE.MathUtils.clamp(pitch.current - e.movementY * 0.0022, -1.35, 1.35);
-    };
-    const down = (e) => {
-      keys[e.code] = true;
-      const s = useGame.getState();
-      if (e.code === 'KeyE' && !e.repeat && !s.skill && s.phase === 'play') {
-        const it = s.focus && interactables.get(s.focus);
-        if (it && it.label()) it.use();
-      }
-    };
-    const up = (e) => { keys[e.code] = false; };
-    const click = () => { if (useGame.getState().phase === 'play' && !useGame.getState().skill) gl.domElement.requestPointerLock?.(); };
-    // webcam gestures trigger the focused interactable
-    const offG = onGesture((name) => {
+    return onGesture((name) => {
       const s = useGame.getState();
       if (s.skill || s.phase !== 'play') return;
       const it = s.focus && interactables.get(s.focus);
       if (it && it.label() && gestureList(it).includes(name)) it.use();
     });
-    document.addEventListener('mousemove', onMove);
-    window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    gl.domElement.addEventListener('click', click);
-    return () => {
-      document.removeEventListener('mousemove', onMove);
-      window.removeEventListener('keydown', down);
-      window.removeEventListener('keyup', up);
-      gl.domElement.removeEventListener('click', click);
-      offG();
-    };
-  }, [camera, gl]);
+  }, [camera]);
 
   useFrame((state, dtRaw) => {
     const dt = Math.min(dtRaw, 0.05);
     const s = useGame.getState();
     const frozen = s.phase !== 'play' || !!s.skill;
     const carrying = s.held === 'pipe';
-    const sprint = keys.ShiftLeft || keys.ShiftRight;
-    const maxSpeed = (carrying ? 2.0 : sprint ? 5.2 : 3.4);
-    const f = new THREE.Vector3(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
-    const r = new THREE.Vector3(-f.z, 0, f.x);
-    const want = new THREE.Vector3();
-    if (!frozen) {
-      if (keys.KeyW || keys.ArrowUp) want.add(f);
-      if (keys.KeyS || keys.ArrowDown) want.sub(f);
-      if (keys.KeyD || keys.ArrowRight) want.add(r);
-      if (keys.KeyA || keys.ArrowLeft) want.sub(r);
-    }
+    const pace = frozen ? 0 : webcamPace();
     const camOn = cam.enabled && cam.calibrated;
     if (!frozen && camOn) {
-      if (Math.abs(cam.forward) > 0.01) want.addScaledVector(f, cam.forward);
       yaw.current += cam.turn * dt;
       pitch.current = THREE.MathUtils.damp(pitch.current, cam.pitch, 5, dt);
     }
-    if (want.lengthSq() > 1) want.normalize();
-    want.multiplyScalar(maxSpeed);
-    vel.current.x = THREE.MathUtils.damp(vel.current.x, want.x, 10, dt);
-    vel.current.z = THREE.MathUtils.damp(vel.current.z, want.z, 10, dt);
+    const speedTarget = !pace ? 0 : carrying ? 2.0 : pace === 2 ? 4.9 : 2.45;
+    vel.current.x = THREE.MathUtils.damp(vel.current.x, -Math.sin(yaw.current) * speedTarget, pace ? 14 : 21, dt);
+    vel.current.z = THREE.MathUtils.damp(vel.current.z, -Math.cos(yaw.current) * speedTarget, pace ? 14 : 21, dt);
     pos.current.addScaledVector(vel.current, dt);
     collide(pos.current);
 
@@ -120,12 +78,11 @@ export default function Player() {
     bob.current += speed * dt * 2.1;
     stepAcc.current += speed * dt;
     if (stepAcc.current > (carrying ? 0.6 : 0.8)) { stepAcc.current = 0; footstep(); }
-    const bobY = Math.sin(bob.current * 2) * 0.025 * Math.min(speed / 3, 1);
 
     // alarm shake, capped for comfort
     const shake = s.alarm ? 0.004 : 0;
     const t = state.clock.elapsedTime;
-    camera.position.set(pos.current.x, EYE + bobY + Math.sin(t * 31) * shake, pos.current.z);
+    camera.position.set(pos.current.x, EYE + Math.sin(t * 31) * shake, pos.current.z);
     camera.rotation.set(pitch.current + Math.sin(t * 27) * shake, yaw.current, 0);
 
     // hands follow camera

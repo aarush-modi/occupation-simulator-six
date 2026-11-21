@@ -3,6 +3,7 @@
  "name": "Sushi prep counter",
  "kind": "station",
  "shells": [
+  "sushi",
   "cafe"
  ],
  "tags": [
@@ -63,7 +64,8 @@
    ],
    "label": "Plate the sushi",
    "requires": [
-    "plate"
+    "plate",
+    "board"
    ],
    "sets": "plated"
   }

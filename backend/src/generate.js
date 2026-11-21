@@ -1,11 +1,10 @@
-// Scenario generation with Gemini (F1, N1, N2).
+// Scenario generation with OpenAI (F1, N1, N2).
 // One bounded request per uncached occupation; if the answer fails validation, one retry with the errors appended.
-// The whole job (both attempts) must finish inside the budget (default 8 s), otherwise it fails and the host picks a demo.
+// The whole job (both attempts) must finish inside the budget (default 45 s), otherwise it fails and the host picks a demo.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { GoogleGenAI } from '@google/genai';
 import { Blueprint } from '../../frontend/src/shared/schema.js';
 import { SHELLS, SHELL_IDS, ANCHORS } from '../../frontend/src/shared/layout.js';
 import { checkBlueprint } from '../../frontend/src/shared/validate.js';
@@ -18,7 +17,8 @@ const anchorsOf = (...kinds) => Object.keys(ANCHORS).filter((id) => kinds.includ
 
 // Rough occupation -> shell hints, used only to trim the menu when the catalog gets large.
 const SHELL_HINTS = {
-  cafe: /barista|cafe|coffee|cook|chef|bak|kitchen|restaurant|bar|food|pizza|sushi|butcher|waiter|server|dish/,
+  sushi: /\b(sushi|itamae|nigiri|sashimi|omakase|maki)\b/,
+  cafe: /barista|cafe|coffee|cook|chef|bak|kitchen|restaurant|bar|food|pizza|butcher|waiter|server|dish/,
   warehouse: /warehouse|picker|pack|ship|logistic|forklift|courier|stock|deliver|mail|post|loading|freight/,
   shop: /shop|store|retail|florist|flower|cashier|pharmac|book|clerk|grocer|tailor|jewel|sales/,
   clinic: /nurse|doctor|clinic|hospital|vet|dent|medic|physio|paramedic|surgeon|therap|care/,
@@ -30,6 +30,7 @@ const SHELL_HINTS = {
 
 export function guessShells(occupation) {
   const o = normalise(occupation);
+  if (SHELL_HINTS.sushi.test(o)) return ['sushi'];
   return SHELL_IDS.filter((s) => SHELL_HINTS[s]?.test(o));
 }
 
@@ -54,10 +55,9 @@ export function responseSchema(menu, { propEnums = false } = {}) {
   const s = z.toJSONSchema(Blueprint, { io: 'input' });
   delete s.$schema;
   delete s.properties.version;
-  s.required = [...new Set([...(s.required ?? []), 'decor'])].filter((k) => k !== 'version');
+  s.required = [...s.required.filter(key => key !== 'version'), 'venue'];
   const P = s.properties;
-  // Gemini rejects schemas whose constraint automaton gets too large ("too many states"), so keep it lean:
-  // anchor enums are small and worth it; prop-id enums over a large catalog are not (validation catches bad ids).
+  // Anchor enums are small. The semantic validator checks catalog IDs against the full catalog.
   if (propEnums) {
     const ids = (...kinds) => menu.filter((r) => kinds.includes(r.kind)).map((r) => r.id);
     P.stations.items.properties.prop.enum = ids('station', 'furniture');
@@ -68,16 +68,32 @@ export function responseSchema(menu, { propEnums = false } = {}) {
   P.decor.items.properties.anchor.enum = anchorsOf('wall', 'island');
   P.npcs.items.properties.anchor.enum = anchorsOf('spot');
   P.items.items.properties.anchor.description = 'S1-S8, or "<stationId>.<slotId>" of a slot that accepts one of the item tags';
-  const strip = (node) => {
-    if (!node || typeof node !== 'object') return;
-    for (const k of ['default', 'minItems', 'maxItems', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum']) delete node[k];
-    for (const v of Object.values(node)) if (v && typeof v === 'object') strip(v);
-  };
-  strip(s);
-  // Array caps are cheap for the constraint engine and the model otherwise overshoots them.
-  P.objectives.maxItems = 10;
-  P.event.properties.replaceRemaining.maxItems = 6;
-  return s;
+  return strictSchema(s);
+}
+
+function strictSchema(node) {
+  delete node.default;
+  if (node.type === 'object') {
+    const required = new Set(node.required);
+    for (const [name, property] of Object.entries(node.properties)) {
+      strictSchema(property);
+      if (!required.has(name)) node.properties[name] = { anyOf: [property, { type: 'null' }] };
+    }
+    node.required = Object.keys(node.properties);
+    node.additionalProperties = false;
+  }
+  if (node.items) strictSchema(node.items);
+  node.anyOf?.forEach(strictSchema);
+  return node;
+}
+
+// Null is the wire representation of fields omitted from the existing blueprint.
+function omitNullFields(value) {
+  if (Array.isArray(value)) return value.map(omitNullFields);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([, field]) => field !== null)
+    .map(([key, field]) => [key, omitNullFields(field)]));
 }
 
 // ---------- prompt ----------
@@ -86,10 +102,13 @@ export function systemPrompt(menu, example) {
   const lines = [
     'You design one short, playable first-person work shift for "Workshift", a co-op 3D job simulator.',
     'One or two players act out a REPRESENTATIVE task of the occupation with body motion. Engine verbs: grab, place, press, talk (walking is free).',
-    'Output ONE JSON object matching the response schema. Use ONLY prop ids from the catalog menu below.',
+    'Output one JSON object matching the response schema. Use null for unused fields that allow null. Use only prop IDs from the catalog menu below.',
     '',
-    'ROOM: one indoor room, 14 m x 11 m, fixed anchors. Pick the best `shell`:',
+    'WORKPLACE: one compact 14 m x 11 m work area with fixed anchors. Pick the closest equipment and architecture family using `shell`:',
     ...Object.entries(SHELLS).map(([id, d]) => `- ${id}: ${d}`),
+    '- Design a specific venue for the request. Give it a short sign name, enclosure, floor, palette, and lighting. Consider an uncovered garden work area for a nursery, a tiled market stall with an open front for a fishmonger, or a warmly lit timber interior for a small sushi bar. Outdoor sites have low boundary rails, no roof, and no wall-mounted decorations.',
+    '- Use native styling when the shell already fits. Only choose concrete where the occupation actually calls for it. Name stations and select decor for their purpose in the venue. Keep aisles open and make the important station easy to find from the entrance.',
+    '- For sushi shifts, use the sushi prep counter and sushi service counter. Let the player prep and plate a salmon order. The service counter accepts a plated sushi serving board.',
     '',
     'ANCHORS:',
     '- wall: N1 N2 N3 N4 N5 (back wall), E1 E2 (right wall), W1 W2 (left wall). island: I1 I2 I3 I4 (free-standing). Stations, furniture and decor go here; each anchor holds one thing.',
@@ -106,11 +125,11 @@ export function systemPrompt(menu, example) {
     '  Only stations with slots can receive items (furniture and decor have none); place targets use exactly the slot ids listed in the menu.',
     '  grab: target = item id. place: target = "<stationId>.<slotId>" or a surface anchor, `item` = the item id. press: target = "<stationId>.<controlId>". talk: target = npc id.',
     '  A player holds ONE item at a time, so every place is directly preceded by a grab of that same item. Every place target must be empty and must accept the item tags at that moment (tags set by earlier presses count). A press needs every `requires` slot of that station filled.',
-    '  labels <= 6 words, imperative ("Seat the cup"). skill: "timing" for rhythmic presses, "steady" for careful placing, "hold" for sustained presses, else "none". Add `say` (<= 10 words) to 2-3 objectives only.',
+    '  labels <= 6 words, imperative ("Seat the cup"). skill: "timing" for rhythmic presses, "steady" for careful placing, "hold" for sustained presses, else "none". Add `say` (<= 10 words) to 2-3 objectives and set it to null on the rest.',
     '- event: an occupation-relevant complication, fired `delaySec` (2-5) seconds after objective `after`. replaceRemaining (2-6 objectives, NEW unique ids) replaces EVERY objective after `after` and must finish the job.',
     '  A closed station rejects everything, including taking items OUT of it: an item sitting in the closed station is lost. replaceRemaining must never use the closed station or an item inside it.',
     '  Proven pattern: put two stations of the same prop in the room (main + backup) and a spare item on a surface. after = the objective that places the item into the main station; close = the main station; replaceRemaining = grab the spare item -> place it in the backup -> press backup control -> grab it -> deliver it.',
-    '  An event without `close` is also fine (e.g. a customer changes the order or the delivery spot).',
+    '  An event with a null `close` is also fine (e.g. a customer changes the order or the delivery spot).',
     '- npcs: realistic co-workers / customers. lines.intro briefs the task (<= 16 words), lines.done congratulates (<= 8 words).',
     '- briefing: 1-2 short sentences, second person. title: <= 5 words. facts: 2-3 true, interesting facts about the real job.',
   ];
@@ -126,52 +145,61 @@ export function systemPrompt(menu, example) {
  * @param {string} [o.apiKey]
  * @param {string} [o.model]
  * @param {number} [o.budgetMs]
+ * @param {string} [o.reasoning]
+ * @param {typeof fetch} [o.fetcher]
  * @param {object} [o.example] blueprint used as a format example in the prompt
  * @param {(req:{system:string, user:string, schema:object, signal:AbortSignal}) => Promise<{text:string, usage?:object}>} [o.callModel]
  */
-export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, model = process.env.GEMINI_MODEL || 'gemini-3.5-flash', budgetMs = Number(process.env.GEMINI_BUDGET_MS) || 8000, example = null, callModel = null, log = console } = {}) {
+export function createGenerator({
+  catalog,
+  apiKey = process.env.OPENAI_API_KEY,
+  model = process.env.OPENAI_MODEL || 'gpt-6.2-astra',
+  budgetMs = Number(process.env.OPENAI_BUDGET_MS) || 45000,
+  reasoning = process.env.OPENAI_REASONING_EFFORT || 'low',
+  example = null, callModel = null, fetcher = fetch, log = console,
+} = {}) {
   const cache = new Map(); // normalised occupation -> blueprint
   const inflight = new Map();
-  // MINIMAL thinking keeps latency down; some models reject it, then we drop thinkingConfig for that model.
-  const thinking = process.env.GEMINI_THINKING || 'MINIMAL';
-  const noThinking = new Set();
-  let ai = null;
 
-  const call =
-    callModel ??
-    (async ({ system, user, schema, signal }) => {
-      if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
-      ai ??= new GoogleGenAI({ apiKey });
-      const request = (withThinking) =>
-        ai.models.generateContent({
-          model,
-          contents: [{ role: 'user', parts: [{ text: user }] }],
-          config: {
-            systemInstruction: system,
-            responseMimeType: 'application/json',
-            responseJsonSchema: schema,
-            temperature: 0.7,
-            ...(withThinking ? { thinkingConfig: { thinkingLevel: thinking } } : {}),
-            abortSignal: signal,
-          },
-        });
-      const useThinking = thinking && thinking !== 'none' && !noThinking.has(model);
-      let res;
-      try {
-        res = await request(useThinking);
-      } catch (err) {
-        if (!useThinking || !/thinking/i.test(String(err?.message))) throw err;
-        noThinking.add(model);
-        res = await request(false);
-      }
-      return { text: res.text, usage: res.usageMetadata };
-    });
+  const call = callModel ?? (async ({ system, user, schema, signal }) => {
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+    let response;
+    try {
+      response = await fetcher('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+        signal,
+        body: JSON.stringify({
+          model, instructions: system, input: user, store: false,
+          reasoning: { effort: reasoning },
+          text: { format: { type: 'json_schema', name: 'workshift_blueprint', schema, strict: true } },
+        }),
+      });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      throw new Error('Could not reach the OpenAI API.');
+    }
+    if (response.status === 401) throw new Error('OpenAI rejected the API key.');
+    if (response.status === 403 || response.status === 404) throw new Error('Check that your OpenAI project has access to the configured model.');
+    if (response.status === 429) throw new Error('OpenAI returned a quota or rate limit error.');
+    if (!response.ok) throw new Error(`OpenAI request failed (HTTP ${response.status}).`);
+    const result = await response.json();
+    const parts = (result.output ?? []).filter(item => item.type === 'message')
+      .flatMap(item => item.content ?? []);
+    if (parts.some(part => part.type === 'refusal')) throw new Error('OpenAI declined to generate this scenario.');
+    if (result.status !== 'completed') throw new Error('OpenAI did not complete the scenario response.');
+    const text = parts.filter(part => part.type === 'output_text').map(part => part.text).join('');
+    if (!text) throw new Error('OpenAI returned an empty scenario response.');
+    return { text, usage: result.usage };
+  });
 
   async function run(occupation) {
     const t0 = Date.now();
     const menu = menuFor(catalog, occupation);
     const system = systemPrompt(menu, example);
     const schema = responseSchema(menu);
+    const [shell] = guessShells(occupation);
+    if (shell === 'sushi') schema.properties.shell.enum = ['sushi'];
     const attempts = [];
     let user = `Occupation: ${occupation}`;
     let lastErrors = [];
@@ -203,8 +231,9 @@ export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, 
       let warnings = [];
       let blueprint = null;
       try {
-        raw = JSON.parse(text);
+        raw = omitNullFields(JSON.parse(text));
         ({ errors, warnings, blueprint } = checkBlueprint(raw, catalog));
+        if (shell === 'sushi' && raw.shell !== 'sushi') errors.push('Use the sushi bar shell for this shift.');
       } catch (err) {
         errors = [`response is not JSON: ${err.message}`];
       }
@@ -236,7 +265,7 @@ export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, 
   }
 
   function record(meta) {
-    log.log(`[gemini] ${JSON.stringify({ ...meta, attempts: meta.attempts.map(({ errors, warnings, ...a }) => ({ ...a, errors: errors?.length ?? 0 })) })}`);
+    log.log(`[openai] ${JSON.stringify({ ...meta, attempts: meta.attempts.map(({ errors, warnings, ...a }) => ({ ...a, errors: errors?.length ?? 0 })) })}`);
     try {
       fs.mkdirSync(path.dirname(logFile), { recursive: true });
       fs.appendFileSync(logFile, JSON.stringify(meta) + '\n');
@@ -248,7 +277,7 @@ export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, 
     const key = normalise(occupation);
     if (cache.has(key)) {
       const meta = { at: new Date().toISOString(), occupation, model, ok: true, ms: 0, cacheHit: true };
-      log.log(`[gemini] ${JSON.stringify(meta)}`);
+      log.log(`[openai] ${JSON.stringify(meta)}`);
       return { ok: true, blueprint: cache.get(key), meta };
     }
     if (inflight.has(key)) return inflight.get(key);
@@ -267,7 +296,12 @@ export function createGenerator({ catalog, apiKey = process.env.GEMINI_API_KEY, 
 }
 
 const usageOf = (u) =>
-  u ? { prompt: u.promptTokenCount ?? 0, output: u.candidatesTokenCount ?? 0, thoughts: u.thoughtsTokenCount ?? 0, total: u.totalTokenCount ?? 0 } : null;
+  u ? {
+    prompt: u.input_tokens ?? 0,
+    output: (u.output_tokens ?? 0) - (u.output_tokens_details?.reasoning_tokens ?? 0),
+    thoughts: u.output_tokens_details?.reasoning_tokens ?? 0,
+    total: u.total_tokens ?? 0,
+  } : null;
 
 const sumUsage = (attempts) =>
   attempts.reduce(

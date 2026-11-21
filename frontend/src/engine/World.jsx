@@ -84,6 +84,10 @@ function RemotePlayer({ id, index }) {
     const h = s.state?.players?.[id]?.held;
     return h ? s.blueprint?.items?.find((i) => i.id === h)?.prop ?? null : null;
   });
+  const plated = useShift((s) => {
+    const held = s.state?.players?.[id]?.held;
+    return s.state?.items?.[held]?.tags?.includes('plated') ?? false;
+  });
   const recipe = heldProp ? recipeOf(heldProp, 'item') : null;
   useLabel(`player:${id}`, { pos: () => { const p = samplePlayer(id); return p ? [p.pos[0], 2.16, p.pos[2]] : null; }, title: name, sub: 'Teammate', color: PLAYER_COLORS[index % PLAYER_COLORS.length] });
   const look = useMemo(() => {
@@ -106,7 +110,7 @@ function RemotePlayer({ id, index }) {
     <group ref={g}>
       <group ref={body}>
         <Humanoid {...look} motion={motion} />
-        {recipe && <group position={[0, 1.0, 0.42]} scale={fit}><Prop recipe={recipe} /></group>}
+        {recipe && <group position={[0, 1.0, 0.42]} scale={fit}><Prop recipe={recipe} plated={plated} /></group>}
       </group>
     </group>
   );
@@ -115,6 +119,7 @@ function RemotePlayer({ id, index }) {
 // Item: eases toward wherever the authoritative state says it is (rest spot or a teammate's hands).
 function Item({ id }) {
   const g = useRef();
+  const plated = useShift((s) => s.state?.items?.[id]?.tags?.includes('plated') ?? false);
   const idx = getIndex();
   const recipe = idx?.items[id]?.recipe;
   const init = useMemo(() => restFrame(idx, useShift.getState().state?.items?.[id]?.at) ?? { pos: [0, -10, 0], rotY: 0 }, [idx, id]);
@@ -143,7 +148,7 @@ function Item({ id }) {
     g.current.rotation.y = rotY;
   });
   if (!recipe) return null;
-  return <group ref={g} position={init.pos} rotation-y={init.rotY}><Prop recipe={recipe} /></group>;
+  return <group ref={g} position={init.pos} rotation-y={init.rotY}><Prop recipe={recipe} plated={plated} /></group>;
 }
 
 const TAPE_R = new THREE.MeshStandardMaterial({ color: '#d4241a', roughness: 0.5, emissive: '#3a0500' });
@@ -235,7 +240,7 @@ const Static = memo(function Static({ bp }) {
   const idx = getIndex();
   return (
     <>
-      <Shell id={bp.shell} />
+      <Shell id={bp.shell} venue={bp.venue} />
       {Object.values(idx.stations).map((st) => {
         const { position, rotationY } = placeAt(st.anchor);
         return <Prop key={st.id} recipe={st.recipe} position={position} rotation-y={rotationY} />;

@@ -48,7 +48,7 @@ function Prompt() {
       {label && !skill && (
         <div style={{ position: 'absolute', left: '50%', top: '58%', transform: 'translateX(-50%)', padding: '8px 14px', ...ui.panel, color: '#fff', fontSize: 15, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <span style={{ background: '#f2b233', color: '#111', fontWeight: 800, borderRadius: 4, padding: '1px 7px' }}>E</span>{label}
+            {label}
           </div>
           {cam.enabled && gestureList(it)[0] && (
             <div style={{ fontSize: 13, color: '#f2b233' }}>Webcam: {GESTURE_HINT[gestureList(it)[0]]}</div>
@@ -106,10 +106,8 @@ export function Timing({ skill, close }) {
     return () => cancelAnimationFrame(raf);
   }, []);
   useEffect(() => {
-    const offG = onGesture((n) => { if (n === 'fist') down({ code: 'Space', repeat: false, preventDefault() {} }); });
-    const down = (e) => {
-      if (e.code !== 'Space' || e.repeat || st.current.paused) return;
-      e.preventDefault();
+    return onGesture((name) => {
+      if (name !== 'fist' || st.current.paused) return;
       const x = st.current.v;
       const [a, b] = skill.band;
       const mid = (a + b) / 2, half = (b - a) / 2;
@@ -125,9 +123,7 @@ export function Timing({ skill, close }) {
         if (hit || remaining <= 0) { live.torque = 0; close(best.current); }
         else { setLeft(remaining); setMsg(''); st.current.paused = false; }
       }, 1100);
-    };
-    window.addEventListener('keydown', down);
-    return () => { window.removeEventListener('keydown', down); offG(); };
+    });
   }, [left, skill, close]);
   return (
     <>
@@ -140,13 +136,9 @@ export function Timing({ skill, close }) {
 export function Steady({ skill, close }) {
   const [v, setV] = useState(skill.start ?? 0.75);
   const [held, setHeld] = useState(0);
-  const st = useRef({ v: skill.start ?? 0.75, vel: 0, held: 0, input: 0, wheel: 0, done: false });
+  const st = useRef({ v: skill.start ?? 0.75, vel: 0, held: 0, done: false });
   useEffect(() => {
-    const k = {};
-    const down = (e) => { k[e.code] = true; };
-    const up = (e) => { k[e.code] = false; };
-    const wheel = (e) => { st.current.wheel += Math.sign(e.deltaY) * 0.35; };
-    window.addEventListener('keydown', down); window.addEventListener('keyup', up); window.addEventListener('wheel', wheel);
+    cam.wheel = 0;
     let raf, last = performance.now(), t0 = performance.now(), inBandTime = 0, total = 0;
     const loop = (t) => {
       const dt = Math.min((t - last) / 1000, 0.05); last = t;
@@ -154,11 +146,8 @@ export function Steady({ skill, close }) {
       if (s.done) return;
       const time = (t - t0) / 1000;
       const drift = (Math.sin(time * 1.3) * 0.6 + Math.sin(time * 2.9 + 1) * 0.4 + 0.25) * skill.drift;
-      let input = 0;
-      if (k.KeyA || k.ArrowLeft) input -= 1;
-      if (k.KeyD || k.ArrowRight) input += 1;
-      input += s.wheel; s.wheel *= 0.8;
-      if (cam.enabled) { input += cam.wheel * 6; cam.wheel = 0; }
+      const input = cam.wheel * 6;
+      cam.wheel = 0;
       s.vel += (drift - input * 0.9) * dt * 2.2;
       s.vel *= Math.pow(0.08, dt);
       s.v = Math.min(1, Math.max(0, s.v + s.vel * dt));
@@ -175,7 +164,7 @@ export function Steady({ skill, close }) {
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('wheel', wheel); };
+    return () => cancelAnimationFrame(raf);
   }, [skill, close]);
   const psi = Math.round(1500 + v * 4500);
   return (
@@ -192,44 +181,40 @@ export function Steady({ skill, close }) {
 export function PressHold({ skill, close }) {
   const [p, setP] = useState(0);
   useEffect(() => {
-    let holding = false, val = 0, raf, last = performance.now(), done = false;
-    const down = (e) => { if (e.code === 'KeyE') holding = true; };
-    const up = (e) => { if (e.code === 'KeyE') holding = false; };
-    window.addEventListener('keydown', down); window.addEventListener('keyup', up);
+    let val = 0, raf, last = performance.now();
     const loop = (t) => {
       const dt = (t - last) / 1000; last = t;
-      val = holding || cam.palmPush ? val + dt / skill.duration : Math.max(0, val - dt);
+      val = cam.palmPush ? val + dt / skill.duration : Math.max(0, val - dt);
       setP(Math.min(val, 1));
-      if (val >= 1 && !done) { done = true; blip(600, 0.3, 0.14, 'square'); setTimeout(() => close(1), 300); return; }
+      if (val >= 1) { blip(600, 0.3, 0.14, 'square'); setTimeout(() => close(1), 300); return; }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+    return () => cancelAnimationFrame(raf);
   }, [skill, close]);
   const R = 46, Cc = 2 * Math.PI * R;
   return (
     <svg width="140" height="140" viewBox="0 0 120 120">
       <circle cx="60" cy="60" r={R} stroke="#2a2a2c" strokeWidth="10" fill="none" />
       <circle cx="60" cy="60" r={R} stroke="#ff3b2f" strokeWidth="10" fill="none" strokeDasharray={Cc} strokeDashoffset={Cc * (1 - p)} transform="rotate(-90 60 60)" strokeLinecap="round" />
-      <text x="60" y="68" textAnchor="middle" fill="#fff" fontSize="26" fontWeight="800">E</text>
+      <text x="60" y="68" textAnchor="middle" fill="#fff" fontSize="20" fontWeight="800">{Math.round(p * 100)}%</text>
     </svg>
   );
 }
 
 export function Choice({ skill, close }) {
-  useEffect(() => {
-    const down = (e) => { if (e.code === 'Digit1') close(0); if (e.code === 'Digit2') close(1); };
-    const offG = onGesture((n) => { if (n === 'one') close(0); if (n === 'two') close(1); });
-    window.addEventListener('keydown', down);
-    return () => { window.removeEventListener('keydown', down); offG(); };
-  }, [close]);
+  useEffect(() => onGesture((name) => {
+    if (name === 'one') close(0);
+    if (name === 'two') close(1);
+  }), [close]);
   return (
     <div style={{ width: 560 }}>
       <div style={{ color: '#eee', fontSize: 17, lineHeight: 1.5, marginBottom: 16 }}>&ldquo;{skill.prompt}&rdquo;</div>
+      <div style={{ color: '#f2b233', fontSize: 13 }}>Hold up one or two fingers to choose.</div>
       {skill.options.map((o, i) => (
-        <button key={i} onClick={() => close(i)} style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 8, padding: '12px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontSize: 15, cursor: 'pointer' }}>
+        <div key={i} style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 8, padding: '12px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontSize: 15 }}>
           <b style={{ color: '#f2b233', marginRight: 10 }}>{i + 1}</b>{o}
-        </button>
+        </div>
       ))}
     </div>
   );
@@ -243,8 +228,7 @@ function Skill() {
   return (
     <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', padding: '22px 26px', ...ui.panel, color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div style={{ fontSize: 12, letterSpacing: 3, color: '#f2b233', textTransform: 'uppercase', marginBottom: 6 }}>{skill.title}</div>
-      {skill.help && <div style={{ fontSize: 13, color: '#bbb', marginBottom: cam.enabled ? 4 : 16, maxWidth: 460, textAlign: 'center' }}>{skill.help}</div>}
-      {cam.enabled && <div style={{ fontSize: 13, color: '#f2b233', marginBottom: 16 }}>{{ timing: 'Webcam: snap a fist to stop', steady: 'Webcam: rotate your hand like a wheel', presshold: 'Webcam: push your palm toward the camera and hold', choice: 'Webcam: show 1 or 2 fingers' }[skill.type]}</div>}
+      {skill.help && <div style={{ fontSize: 13, color: '#bbb', marginBottom: 16, maxWidth: 460, textAlign: 'center' }}>{skill.help}</div>}
       <Comp skill={skill} close={closeSkill} />
     </div>
   );
@@ -264,18 +248,19 @@ function Alarm() {
 
 function Intro() {
   const start = useGame((s) => s.start);
+  useEffect(() => onGesture((name) => {
+    if (name !== 'wave') return;
+    startAudio();
+    start();
+    useGame.getState().say('Radio', 'Floor, doghouse. New hand is on deck. Rhodes, he is all yours.', 3600);
+  }), [start]);
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'radial-gradient(ellipse at center, rgba(10,10,12,0.35), rgba(10,10,12,0.85))' }}>
       <div style={{ textAlign: 'center', color: '#fff', maxWidth: 620 }}>
         <div style={{ fontSize: 13, letterSpacing: 6, color: '#f2b233' }}>WORKSHIFT</div>
         <div style={{ fontSize: 54, fontWeight: 900, marginTop: 6, letterSpacing: -1 }}>Offshore Drilling Rig</div>
         <div style={{ fontSize: 17, color: '#d8d0c4', marginTop: 10 }}>You are a floorhand on a twelve hour tour. The well is at eleven thousand feet. Do your job, keep your crew safe.</div>
-        <div style={{ marginTop: 22, fontSize: 13, color: '#aaa' }}>WASD move · Mouse look · Shift sprint · E interact</div>
-        <button
-          onClick={() => { startAudio(); start(); if (!cam.enabled) window.__lock?.(); useGame.getState().say('Radio', 'Floor, doghouse. New hand is on deck. Rhodes, he is all yours.', 3600); }}
-          style={{ marginTop: 26, padding: '14px 38px', fontSize: 18, fontWeight: 800, borderRadius: 10, border: 0, background: '#f2b233', color: '#111', cursor: 'pointer' }}>
-          Start shift
-        </button>
+        <div style={{ marginTop: 22, fontSize: 16, color: '#f2b233' }}>Wave to start the shift</div>
       </div>
     </div>
   );
@@ -332,7 +317,6 @@ export default function Hud() {
     // dev helper: ?kick=1 jumps straight to the emergency
     window.__workshift = { state: () => useGame.getState(), flow, set: (p) => useGame.getState().set(p), close: (r) => useGame.getState().closeSkill(r) };
   }, []);
-  useEffect(() => { if (skill?.type === 'choice') document.exitPointerLock?.(); }, [skill]);
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', fontFamily: ui.font }}>
       <div style={{ position: 'absolute', inset: 0, pointerEvents: phase === 'play' && !skill ? 'none' : 'auto' }}>

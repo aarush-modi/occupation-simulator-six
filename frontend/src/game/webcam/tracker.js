@@ -1,7 +1,8 @@
-// MediaPipe hand + face tracking loop. Feeds the gesture engine.
+// MediaPipe hand, face, and body tracking loop. Feeds the gesture engine.
 import { cam, createGestureEngine } from './gestures';
 
 const HAND_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task';
+const POSE_MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task';
 
 export const engine = createGestureEngine();
@@ -16,23 +17,40 @@ if (typeof window !== 'undefined' && !window.__mpLogPatched) {
     orig(...args);
   };
 }
-let video, hands, face, raf, stream, lastTime = -1;
+let video, hands, face, pose, raf, stream, lastTime = -1, lastPoseTime = -Infinity, body = null;
 
-export async function startTracking() {
-  if (cam.enabled) return video;
+let pending;
+let session = 0;
+
+export function startTracking() {
+  if (cam.enabled) return Promise.resolve(video);
+  if (pending) return pending;
+  const activeSession = ++session;
+  pending = openCamera(activeSession).finally(() => {
+    if (activeSession === session) pending = null;
+  });
+  return pending;
+}
+
+async function openCamera(activeSession) {
   cam.status = 'loading';
   cam.error = null;
+  let input;
+  const models = [];
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false });
-    video = document.createElement('video');
-    video.srcObject = stream;
-    video.muted = true;
-    video.playsInline = true;
-    await video.play();
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Open this shift over HTTPS or localhost to use the camera.');
+    input = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false });
+    if (activeSession !== session) return;
+    const view = document.createElement('video');
+    view.srcObject = input;
+    view.muted = true;
+    view.playsInline = true;
+    await view.play();
 
-    const { FilesetResolver, HandLandmarker, FaceLandmarker } = await import('@mediapipe/tasks-vision');
+    const { FilesetResolver, HandLandmarker, FaceLandmarker, PoseLandmarker } = await import('@mediapipe/tasks-vision');
     const fileset = await FilesetResolver.forVisionTasks('/mediapipe');
-    [hands, face] = await Promise.all([
+    if (activeSession !== session) return;
+    const results = await Promise.allSettled([
       HandLandmarker.createFromOptions(fileset, {
         baseOptions: { modelAssetPath: HAND_MODEL, delegate: 'GPU' },
         runningMode: 'VIDEO',
@@ -46,17 +64,37 @@ export async function startTracking() {
         runningMode: 'VIDEO',
         numFaces: 1,
       }),
+      PoseLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: POSE_MODEL, delegate: 'CPU' },
+        runningMode: 'VIDEO',
+        numPoses: 1,
+      }),
     ]);
+    models.push(...results.filter(result => result.status === 'fulfilled').map(result => result.value));
+    if (activeSession !== session) return;
+    const failed = results.find(result => result.status === 'rejected');
+    if (failed) throw failed.reason;
+    [hands, face, pose] = models.splice(0);
+    video = view;
+    stream = input;
+    input = null;
     cam.enabled = true;
+    lastTime = -1;
+    lastPoseTime = -Infinity;
     engine.calibrate();
     loop();
     return video;
-  } catch (e) {
-    console.error('[webcam]', e);
-    cam.status = 'error';
-    cam.error = e?.message ?? String(e);
+  } catch (error) {
+    if (activeSession !== session) return;
     stopTracking();
-    throw e;
+    cam.status = 'error';
+    cam.error = error.name === 'NotAllowedError'
+      ? 'Allow camera access in your browser, then retry.'
+      : (error.message ?? String(error));
+    throw error;
+  } finally {
+    input?.getTracks().forEach(track => track.stop());
+    models.forEach(model => model.close());
   }
 }
 
@@ -69,19 +107,37 @@ function loop() {
   const f = face.detectForVideo(video, t);
   const faceLm = f.faceLandmarks?.[0] ?? null;
   const handLm = h.landmarks ?? [];
-  cam.frame = { face: faceLm, hands: handLm };
-  engine.update(faceLm, handLm);
+  let poseFrame;
+  if (pose && t - lastPoseTime >= 48) {
+    lastPoseTime = t;
+    try {
+      const p = pose.detectForVideo(video, t);
+      poseFrame = p.landmarks[0] ?? null;
+    } catch (error) {
+      stopTracking();
+      cam.status = 'error';
+      cam.error = 'Body tracking stopped. Retry the camera.';
+      console.warn('[webcam] Leg tracking paused', error);
+      return;
+    }
+    body = poseFrame;
+  }
+  cam.frame = { face: faceLm, hands: handLm, body };
+  engine.update(faceLm, handLm, poseFrame);
 }
 
 export function stopTracking() {
+  session++;
+  pending = null;
   cancelAnimationFrame(raf);
   stream?.getTracks().forEach((t) => t.stop());
-  hands?.close?.(); face?.close?.();
-  hands = face = video = stream = null;
+  hands?.close?.(); face?.close?.(); pose?.close?.();
+  hands = face = pose = video = stream = body = null;
+  cam.frame = null;
   cam.enabled = false;
   cam.calibrated = false;
-  cam.forward = 0; cam.turn = 0; cam.palmPush = false;
-  if (cam.status !== 'error') cam.status = 'off';
+  cam.moveUntil = 0; cam.runUntil = 0; cam.turn = 0; cam.palmPush = false; cam.wheel = 0;
+  cam.status = 'off';
 }
 
 export function getVideo() { return video; }

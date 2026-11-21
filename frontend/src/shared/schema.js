@@ -57,6 +57,13 @@ export const Blueprint = z.object({
   title: z.string(),
   briefing: z.string(),
   shell: z.enum(SHELL_IDS),
+  venue: z.object({
+    name: z.string().trim().min(1).max(40),
+    enclosure: z.enum(['interior', 'open_front', 'outdoor']),
+    floor: z.enum(['native', 'timber', 'tile', 'rubber', 'concrete', 'gravel', 'grass']),
+    palette: z.enum(['native', 'warm', 'coastal', 'forest', 'industrial', 'clinical', 'bold']),
+    lighting: z.enum(['native', 'daylight', 'warm', 'task', 'dusk']),
+  }).optional(),
   stations: z.array(z.object({ id: z.string(), prop: z.string(), anchor, label: z.string() })).min(1).max(9),
   items: z.array(z.object({ id: z.string(), prop: z.string(), anchor: z.string(), label: z.string() })).max(12),
   decor: z.array(z.object({ prop: z.string(), anchor })).max(8).default([]),

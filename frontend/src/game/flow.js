@@ -74,7 +74,7 @@ export function useControlStand() {
   s.openSkill({
     type: 'timing',
     title: 'Make-up torque',
-    help: 'Press SPACE to stop the torque needle in the green band. 3 attempts.',
+    help: 'Make a fist when the torque needle is in the green. You have three attempts.',
     band: [0.66, 0.79],
     attempts: 3,
     onDone: (score) => {
@@ -100,7 +100,7 @@ export function useChoke() {
     s.openSkill({
       type: 'steady',
       title: 'Choke manifold',
-      help: 'Hold A / D (or scroll) to turn the handwheel. Keep the pressure needle in the green for 5 seconds.',
+      help: 'Turn your wrist to turn the handwheel. Keep the pressure needle in the green for 5 seconds.',
       band: [0.42, 0.58],
       hold: 5,
       drift: 0.22,
@@ -115,7 +115,7 @@ export function useChoke() {
     s.openSkill({
       type: 'steady',
       title: 'Bleed off through pump 2 line',
-      help: 'Pressure is surging. Hold A / D to fight it. Keep it in the green for 6 seconds.',
+      help: 'Pressure is surging. Turn your wrist to adjust the handwheel. Keep it in the green for 6 seconds.',
       band: [0.4, 0.55],
       hold: 6,
       drift: 0.5,
@@ -155,7 +155,7 @@ export function useBopButton() {
   s.openSkill({
     type: 'presshold',
     title: 'Annular preventer',
-    help: 'Hold E for 2 seconds. Do not let go.',
+    help: 'Push your palm toward the camera and hold for two seconds.',
     duration: 2,
     onDone: () => {
       g().set({ annularAt: performance.now() });

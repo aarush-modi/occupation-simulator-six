@@ -1,6 +1,7 @@
 {
  "kind": "item",
  "shells": [
+  "sushi",
   "cafe"
  ],
  "slots": [],
@@ -28,6 +29,7 @@
    ],
    "part": {
     "t": "box",
+    "name": "getaFoot",
     "s": [
      0.03,
      0.02,

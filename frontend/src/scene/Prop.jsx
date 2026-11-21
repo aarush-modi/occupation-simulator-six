@@ -106,9 +106,14 @@ function PartMesh({ part }) {
   );
 }
 
-function PropImpl({ recipe, children, ...groupProps }) {
+function PropImpl({ recipe, children, plated, ...groupProps }) {
   const parts = recipe?.parts;
-  const meshes = useMemo(() => (parts ?? []).map((part, i) => <PartMesh key={i} part={part} />), [parts]);
+  const meshes = useMemo(() => {
+    const visible = recipe?.id === 'sushi_serving_plate' && plated === false
+      ? parts.filter(part => part.name === 'getaBoard' || part.part?.name === 'getaFoot')
+      : (parts ?? []);
+    return visible.map((part, i) => <PartMesh key={i} part={part} />);
+  }, [parts, plated, recipe?.id]);
   if (!recipe) return null;
   return (
     <group name={recipe.id} {...groupProps}>
