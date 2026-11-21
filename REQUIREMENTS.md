@@ -2,7 +2,7 @@
 
 ## Product goal
 
-A player names an occupation they want to try. Workshift generates a short, interactive 3D shift centered on a representative task. The player performs the task through webcam motion capture, either solo or with a guest who joins by QR code.
+A player names an occupation they want to try. Workshift generates a short, interactive 3D shift centered on a representative task. Each player experiences the shift in first person, seeing the workplace from their avatar’s eye level and performing the task through webcam motion capture. They can play solo or invite a guest by QR code.
 
 The hackathon demo targets one indoor workplace per shift, one or two players, and a session that takes a few minutes. The first benchmark occupations are barista, warehouse picker, and florist. Each should teach a different sequence of work, such as operating a machine, sorting items by order, or assembling a set of materials.
 
@@ -17,6 +17,7 @@ The hackathon demo targets one indoor workplace per shift, one or two players, a
 | F5 | The host can play solo or share a QR code and copyable link. Guests can join while the scenario generates. | Two HTTPS-connected laptops share a room, see the same state, and can hand off a prop. Simultaneous grab requests grant a single hold. |
 | F6 | NPCs respond to actions and the event director can introduce an occupation-relevant complication. | A station closure changes the destination and NPC instructions. Players can complete the revised task together. |
 | F7 | The UI shows the current task, reachable target, tracking state, and shift result. The host can select a labeled demo shift when generation fails or times out. | The host can recover in the same lobby, using the same invite. |
+| F8 | Gameplay uses a first-person camera at the local avatar’s eye level. Tracked hands and held props appear in view when they enter the field of view. Other players appear as avatars in the world. | Each player sees from their own avatar’s viewpoint and can visually guide a reach, pickup, handoff, and placement. |
 
 ## Non-functional requirements
 
@@ -28,6 +29,7 @@ The hackathon demo targets one indoor workplace per shift, one or two players, a
 | N4 | Process webcam video on-device. Send compact avatar poses and action intents. Send a short audio clip to Gemini only when the host chooses to record a prompt. Keep the key on the backend. | Inspect browser requests and WebSocket messages. Confirm camera and microphone permission flows over HTTPS. |
 | N5 | Recover from tracking loss, failed generation, and invalid blueprints. The server stops stale movement and releases held props after a short grace period. | Cover each failure in a local simulation or two-laptop test. |
 | N6 | Keep deployment to a Next.js frontend and one long-running Node backend. Rooms and cache are disposable across restarts. | Run both apps locally and exercise a Vercel preview against one HTTPS/WSS backend. |
+| N7 | Keep first-person camera motion comfortable during webcam-controlled movement. Smooth noisy heading changes and avoid forced camera bob. | Run in place, turn, and stop on a laptop webcam. Confirm the view settles when the player stops and remains readable while reaching. |
 
 ## Architecture and workflow
 
@@ -45,7 +47,7 @@ flowchart LR
 1. **Open the lobby.** The frontend preloads the renderer, tracking model, and common assets. Creating a lobby returns a room ID immediately so the host can share it while generation runs.
 2. **Generate the scenario.** The backend calls Gemini with the occupation, available actions, and a compact output schema. Default to `gemini-4-carbon`, Google's most capable reasoning model. Keep the model configurable with `GEMINI_MODEL` for latency comparisons. Carbon requires paid Gemini API access. Verify the latency target with the actual key and network. [Gemini model comparison](https://aistudio.google.com/docs/choosing-a-model) · [Gemini 4 Carbon](https://aistudio.google.com/docs/models/gemini-4-carbon)
 3. **Validate and assemble the scene.** Zod checks the schema. Semantic checks verify unique IDs, valid references, prop placement, available actions, and reachability before and after events. The builder maps station and prop IDs to reusable geometry, colliders, grip points, and interaction zones. Fixed layout anchors let the scene load quickly.
-4. **Enter the shared world.** Each browser loads the validated blueprint and calibrates its camera. React Three Fiber renders the room. MediaPipe Pose Landmarker supplies local pose data. The browser highlights reachable objects and sends movement and interaction intents over WebSocket.
+4. **Enter the shared world.** Each browser loads the validated blueprint and calibrates its webcam. React Three Fiber renders the room from a first-person camera attached to the local avatar at eye level. The camera follows the avatar’s position and smoothed heading. MediaPipe Pose Landmarker drives the visible hands and supplies local pose data. The browser highlights reachable objects and sends movement and interaction intents over WebSocket.
 5. **Run the shift.** Rapier and the room server resolve movement, holds, collisions, placement, and task progress. NPCs use goal-based state machines. The event director checks live conditions and applies changes to stations, NPC goals, and objectives together.
 6. **Finish or recover.** Show the outcome when the job task is complete. When generation times out or fails validation, the host can explicitly select a prevalidated demo shift in the same room.
 
@@ -62,8 +64,8 @@ A generated scenario composes engine capabilities. The initial verbs are **move,
 ## Implementation milestones
 
 1. **Specify the gameplay contract.** Hand-author a barista scenario and a warehouse scenario with different objectives. Verify they fit one blueprint and model the jobs recognizably.
-2. **Prove motion-only interaction.** Build a single workstation. Verify running, steering, pickup, and placement with a full-body webcam view, including false-grab and tracking-loss checks.
-3. **Prove shared physics.** Connect two laptops by QR and WebSocket. Verify a handoff, one-holder arbitration, and a late join.
+2. **Prove first-person motion interaction.** Build a single workstation. With the player’s full body framed by the webcam, verify running, steering, pickup, and placement from the avatar’s viewpoint. Check that the camera remains stable and the tracked hands are visible while interacting. Include false-grab and tracking-loss checks.
+3. **Prove shared physics.** Connect two laptops by QR and WebSocket. Verify that each player sees from their own viewpoint, can see the other avatar, and sees the same result after a handoff. Test one-holder arbitration and a late join.
 4. **Add NPCs and an event.** Tie an NPC's instructions to live task progress. Verify that the director can change a task and still leave an achievable outcome.
 5. **Connect Gemini and rehearse.** Generate an unseen occupation from typed and spoken prompts. Measure latency and first-pass validation. Rehearse the fallback and the QR flow on the demo network.
 
