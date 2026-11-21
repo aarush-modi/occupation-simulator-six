@@ -1,0 +1,237 @@
+{
+ "slots": [],
+ "controls": [],
+ "id": "gen_trash_bin",
+ "name": "Swing-lid trash bin",
+ "kind": "furniture",
+ "shells": [
+  "cafe",
+  "warehouse",
+  "shop",
+  "clinic",
+  "lab",
+  "workshop",
+  "office",
+  "salon"
+ ],
+ "tags": [
+  "bin",
+  "trash",
+  "waste"
+ ],
+ "size": [
+  0.48,
+  0.88,
+  0.48
+ ],
+ "parts": [
+  {
+   "t": "cyl",
+   "name": "base",
+   "rt": 0.2,
+   "h": 0.04,
+   "p": [
+    0,
+    0.02,
+    0
+   ],
+   "m": "plasticBlack",
+   "rb": 0.205
+  },
+  {
+   "t": "cyl",
+   "name": "body",
+   "rt": 0.225,
+   "h": 0.66,
+   "p": [
+    0,
+    0.37,
+    0
+   ],
+   "m": "plasticGrey",
+   "rb": 0.195
+  },
+  {
+   "t": "repeat",
+   "n": 3,
+   "step": [
+    0,
+    0.2,
+    0
+   ],
+   "p": [
+    0,
+    0.14,
+    0
+   ],
+   "part": {
+    "t": "torus",
+    "R": 0.21,
+    "tube": 0.006,
+    "r": [
+     1.5708,
+     0,
+     0
+    ],
+    "m": "plasticGrey"
+   }
+  },
+  {
+   "t": "torus",
+   "name": "bagRim",
+   "R": 0.228,
+   "tube": 0.012,
+   "p": [
+    0,
+    0.705,
+    0
+   ],
+   "m": "plasticBlack",
+   "r": [
+    1.5708,
+    0,
+    0
+   ]
+  },
+  {
+   "t": "cyl",
+   "name": "lidBand",
+   "rt": 0.235,
+   "h": 0.05,
+   "p": [
+    0,
+    0.725,
+    0
+   ],
+   "m": "plasticGrey"
+  },
+  {
+   "t": "sph",
+   "name": "lidDome",
+   "rad": 0.235,
+   "p": [
+    0,
+    0.75,
+    0
+   ],
+   "m": "plasticGrey",
+   "sy": 0.55
+  },
+  {
+   "t": "box",
+   "name": "flapOpening",
+   "s": [
+    0.2,
+    0.09,
+    0.03
+   ],
+   "p": [
+    0,
+    0.8,
+    0.175
+   ],
+   "m": "plasticBlack",
+   "round": 0.012,
+   "r": [
+    -0.75,
+    0,
+    0
+   ]
+  },
+  {
+   "t": "box",
+   "name": "flap",
+   "s": [
+    0.18,
+    0.075,
+    0.02
+   ],
+   "p": [
+    0,
+    0.803,
+    0.182
+   ],
+   "m": "plasticGrey",
+   "round": 0.01,
+   "r": [
+    -0.75,
+    0,
+    0
+   ]
+  },
+  {
+   "t": "cyl",
+   "name": "flapPivotL",
+   "rt": 0.008,
+   "h": 0.03,
+   "p": [
+    -0.125,
+    0.82,
+    0.17
+   ],
+   "m": "chrome",
+   "r": [
+    0,
+    0,
+    1.5708
+   ]
+  },
+  {
+   "t": "cyl",
+   "name": "flapPivotR",
+   "rt": 0.008,
+   "h": 0.03,
+   "p": [
+    0.125,
+    0.82,
+    0.17
+   ],
+   "m": "chrome",
+   "r": [
+    0,
+    0,
+    1.5708
+   ]
+  },
+  {
+   "t": "box",
+   "name": "label",
+   "s": [
+    0.1,
+    0.06,
+    0.004
+   ],
+   "p": [
+    0,
+    0.48,
+    0.213
+   ],
+   "m": "white",
+   "r": [
+    -0.05,
+    0,
+    0
+   ]
+  },
+  {
+   "t": "box",
+   "name": "labelIcon",
+   "s": [
+    0.03,
+    0.03,
+    0.002
+   ],
+   "p": [
+    0,
+    0.48,
+    0.216
+   ],
+   "m": "plasticBlack",
+   "r": [
+    -0.05,
+    0,
+    0
+   ]
+  }
+ ]
+}

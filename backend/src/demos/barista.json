@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "occupation": "barista",
+  "title": "Morning Rush at the Espresso Bar",
+  "briefing": "You are opening barista on a busy morning. Grind fresh beans, pull an espresso and hand it off at the pickup counter.",
+  "shell": "cafe",
+  "stations": [
+    { "id": "grinder", "prop": "coffee_grinder_station", "anchor": "N1", "label": "Coffee grinder" },
+    { "id": "espresso", "prop": "espresso_machine", "anchor": "N2", "label": "Main espresso machine" },
+    { "id": "steamer", "prop": "milk_steamer_station", "anchor": "N3", "label": "Milk steamer" },
+    { "id": "backup", "prop": "espresso_machine", "anchor": "N4", "label": "Backup espresso machine" },
+    { "id": "pickup", "prop": "cafe_pickup_counter", "anchor": "I4", "label": "Pickup counter" }
+  ],
+  "items": [
+    { "id": "beans", "prop": "coffee_bean_bag", "anchor": "S1", "label": "Bag of espresso beans" },
+    { "id": "cup", "prop": "coffee_cup", "anchor": "S2", "label": "Coffee cup" },
+    { "id": "cup2", "prop": "coffee_cup", "anchor": "S3", "label": "Spare coffee cup" },
+    { "id": "milk", "prop": "milk_jug", "anchor": "S4", "label": "Milk jug" }
+  ],
+  "decor": [
+    { "prop": "cafe_menu_board_stand", "anchor": "W1" },
+    { "prop": "cafe_potted_plant", "anchor": "W2" },
+    { "prop": "cafe_pastry_display_case", "anchor": "E1" },
+    { "prop": "cafe_bistro_table", "anchor": "I3" },
+    { "prop": "cafe_bar_stool", "anchor": "E2" }
+  ],
+  "npcs": [
+    {
+      "id": "maya", "name": "Maya", "role": "Shift lead", "anchor": "P3", "outfit": "apron",
+      "lines": { "intro": "Morning! Grind the beans, pull a shot and get it to the pickup counter.", "done": "Smooth service. You're a natural!" }
+    },
+    {
+      "id": "leo", "name": "Leo", "role": "Customer", "anchor": "P1", "outfit": "casual",
+      "lines": { "intro": "One espresso, please. I'm running late!", "done": "Perfect, thanks!" }
+    }
+  ],
+  "objectives": [
+    { "id": "checkin", "verb": "talk", "target": "maya", "label": "Check in with Maya", "skill": "none" },
+    { "id": "grab_beans", "verb": "grab", "target": "beans", "label": "Grab the bag of beans", "skill": "none" },
+    { "id": "load_beans", "verb": "place", "target": "grinder.bag", "item": "beans", "label": "Load the beans into the grinder", "skill": "steady" },
+    { "id": "grind", "verb": "press", "target": "grinder.grind", "label": "Grind the beans", "skill": "hold", "say": { "npc": "maya", "text": "Smell that? Fresh grounds for every shot." } },
+    { "id": "grab_cup", "verb": "grab", "target": "cup", "label": "Grab a cup", "skill": "none" },
+    { "id": "seat_cup", "verb": "place", "target": "espresso.cup", "item": "cup", "label": "Seat the cup under the main machine", "skill": "steady" },
+    { "id": "brew", "verb": "press", "target": "espresso.brew", "label": "Pull the espresso shot", "skill": "timing", "say": { "npc": "maya", "text": "Nice crema. About 25 seconds is right." } },
+    { "id": "take_cup", "verb": "grab", "target": "cup", "label": "Take the espresso", "skill": "none" },
+    { "id": "serve", "verb": "place", "target": "pickup.pickup", "item": "cup", "label": "Set the espresso on the pickup counter", "skill": "steady" },
+    { "id": "bell", "verb": "press", "target": "pickup.bell", "label": "Ring the bell for Leo", "skill": "none", "say": { "npc": "leo", "text": "That's mine, thanks!" } }
+  ],
+  "event": {
+    "after": "seat_cup",
+    "delaySec": 4,
+    "announce": { "npc": "maya", "text": "The main machine's group head just clogged! Grab the spare cup and use the backup machine." },
+    "close": "espresso",
+    "replaceRemaining": [
+      { "id": "grab_spare", "verb": "grab", "target": "cup2", "label": "Grab the spare cup", "skill": "none" },
+      { "id": "seat_spare", "verb": "place", "target": "backup.cup", "item": "cup2", "label": "Seat the cup under the backup machine", "skill": "steady" },
+      { "id": "brew_backup", "verb": "press", "target": "backup.brew", "label": "Pull the shot on the backup", "skill": "timing", "say": { "npc": "maya", "text": "Good save. That's how a rush goes." } },
+      { "id": "take_spare", "verb": "grab", "target": "cup2", "label": "Take the espresso", "skill": "none" },
+      { "id": "serve_spare", "verb": "place", "target": "pickup.pickup", "item": "cup2", "label": "Set the espresso on the pickup counter", "skill": "steady" },
+      { "id": "bell_spare", "verb": "press", "target": "pickup.bell", "label": "Ring the bell for Leo", "skill": "none", "say": { "npc": "leo", "text": "Worth the wait, thanks!" } }
+    ]
+  },
+  "facts": [
+    "A standard espresso shot takes about 25 to 30 seconds to pull.",
+    "Baristas adjust the grind size through the day as humidity changes.",
+    "Espresso is brewed at around 9 bar of pressure.",
+    "Coffee beans start losing aroma within minutes of grinding."
+  ]
+}

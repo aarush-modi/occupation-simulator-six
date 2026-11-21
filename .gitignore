@@ -4,3 +4,6 @@ out/
 .vercel/
 .env*
 !.env.example
+logs/
+frontend/public/mediapipe/
+dev.log

@@ -1,0 +1,21 @@
+{
+  "id": "espresso_machine",
+  "name": "Espresso machine",
+  "kind": "station",
+  "shells": ["cafe"],
+  "tags": ["coffee", "machine", "barista"],
+  "size": [1.6, 1.45, 0.8],
+  "slots": [{ "id": "cup", "pos": [0.0, 1.0, 0.24], "accepts": ["cup"] }],
+  "controls": [{ "id": "brew", "pos": [0.3, 1.32, 0.3], "label": "Pull a shot", "requires": ["cup"], "sets": "brewed" }],
+  "parts": [
+    { "t": "box", "name": "counter", "s": [1.6, 0.9, 0.8], "p": [0, 0.45, 0], "m": "woodDark", "round": 0.02 },
+    { "t": "box", "name": "counterTop", "s": [1.64, 0.04, 0.84], "p": [0, 0.92, 0], "m": "marble", "round": 0.01 },
+    { "t": "box", "name": "body", "s": [0.9, 0.42, 0.5], "p": [0, 1.15, -0.08], "m": "stainless", "round": 0.04 },
+    { "t": "box", "name": "drip", "s": [0.7, 0.03, 0.18], "p": [0, 0.955, 0.22], "m": "black" },
+    { "t": "cyl", "name": "groupHead", "rt": 0.05, "h": 0.08, "p": [0, 1.06, 0.22], "m": "chrome" },
+    { "t": "box", "name": "portafilter", "s": [0.04, 0.03, 0.2], "p": [0, 1.02, 0.3], "m": "black" },
+    { "t": "cyl", "name": "wand", "rt": 0.012, "h": 0.3, "p": [-0.36, 1.05, 0.18], "r": [0.3, 0, 0], "m": "chrome" },
+    { "t": "cyl", "name": "brewButton", "rt": 0.035, "h": 0.02, "p": [0.3, 1.32, 0.17], "r": [1.5708, 0, 0], "m": "green_glow" },
+    { "t": "repeat", "n": 4, "step": [0.18, 0, 0], "p": [-0.27, 1.38, -0.1], "part": { "t": "cyl", "rt": 0.05, "h": 0.07, "m": "ceramic" } }
+  ]
+}

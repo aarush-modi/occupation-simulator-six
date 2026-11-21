@@ -1,0 +1,178 @@
+{
+ "slots": [],
+ "controls": [],
+ "id": "gen_water_bottle",
+ "name": "Water bottle",
+ "kind": "item",
+ "shells": [
+  "cafe",
+  "warehouse",
+  "shop",
+  "clinic",
+  "lab",
+  "workshop",
+  "office",
+  "salon"
+ ],
+ "tags": [
+  "bottle",
+  "water",
+  "drink"
+ ],
+ "size": [
+  0.07,
+  0.26,
+  0.07
+ ],
+ "parts": [
+  {
+   "t": "lathe",
+   "name": "bottle",
+   "pts": [
+    [
+     0,
+     0
+    ],
+    [
+     0.028,
+     0.001
+    ],
+    [
+     0.033,
+     0.01
+    ],
+    [
+     0.033,
+     0.165
+    ],
+    [
+     0.028,
+     0.185
+    ],
+    [
+     0.017,
+     0.2
+    ],
+    [
+     0.016,
+     0.215
+    ]
+   ],
+   "p": [
+    0,
+    0,
+    0
+   ],
+   "m": "glassClear"
+  },
+  {
+   "t": "cyl",
+   "name": "water",
+   "rt": 0.03,
+   "h": 0.14,
+   "p": [
+    0,
+    0.08,
+    0
+   ],
+   "m": "liquidBlue"
+  },
+  {
+   "t": "cyl",
+   "name": "label",
+   "rt": 0.0335,
+   "h": 0.06,
+   "p": [
+    0,
+    0.09,
+    0
+   ],
+   "m": "plasticBlue"
+  },
+  {
+   "t": "box",
+   "name": "labelLogo",
+   "s": [
+    0.03,
+    0.015,
+    0.002
+   ],
+   "p": [
+    0,
+    0.095,
+    0.034
+   ],
+   "m": "white"
+  },
+  {
+   "t": "torus",
+   "name": "ribA",
+   "R": 0.033,
+   "tube": 0.002,
+   "p": [
+    0,
+    0.03,
+    0
+   ],
+   "m": "glassClear",
+   "r": [
+    1.5708,
+    0,
+    0
+   ]
+  },
+  {
+   "t": "torus",
+   "name": "ribB",
+   "R": 0.033,
+   "tube": 0.002,
+   "p": [
+    0,
+    0.15,
+    0
+   ],
+   "m": "glassClear",
+   "r": [
+    1.5708,
+    0,
+    0
+   ]
+  },
+  {
+   "t": "cyl",
+   "name": "cap",
+   "rt": 0.018,
+   "h": 0.022,
+   "p": [
+    0,
+    0.226,
+    0
+   ],
+   "m": "plasticBlue"
+  },
+  {
+   "t": "cyl",
+   "name": "capRing",
+   "rt": 0.0185,
+   "h": 0.004,
+   "p": [
+    0,
+    0.215,
+    0
+   ],
+   "m": "plasticWhite"
+  },
+  {
+   "t": "torus",
+   "name": "capLoop",
+   "R": 0.012,
+   "tube": 0.003,
+   "p": [
+    0,
+    0.243,
+    0
+   ],
+   "m": "plasticBlue"
+  }
+ ]
+}
