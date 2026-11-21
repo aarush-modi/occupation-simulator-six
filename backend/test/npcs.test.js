@@ -87,3 +87,20 @@ test('a grab reserves the station the item sits in', () => {
   const state = { cur: 4, objectives: bp.objectives, items: { cup1: { at: 'main.cup' } } };
   assert.deepEqual([...playerStations(state)].sort(), ['main', 'shelf']);
 });
+
+test('coworkers call out while they work, at most once every 20 s', () => {
+  const bp = blueprint();
+  bp.npcs[0].lines.ambient = ['Behind!', 'Order up'];
+  const state = { phase: 'play', closed: [], cur: 0, objectives: bp.objectives, items: {},
+    players: { p: { active: true, pos: [6, 0, 4.3], lastSeen: 0 } } };
+  const crowd = new RoomCrowd(bp, CATALOG, null);
+  crowd.actors.forEach(actor => actor.greeted.add('p'));
+  const calls = [];
+  for (let t = 0; t < 60000; t += 50) {
+    state.players.p.lastSeen = t;
+    for (const event of crowd.step(state, t)) if (event.type === 'say') calls.push({ t, text: event.text });
+  }
+  assert.ok(calls.length >= 2, `call-outs ${calls.length}`);
+  for (let i = 1; i < calls.length; i++) assert.ok(calls[i].t - calls[i - 1].t >= 20000);
+  assert.ok(calls.every(call => bp.npcs[0].lines.ambient.includes(call.text)));
+});

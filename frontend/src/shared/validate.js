@@ -94,6 +94,8 @@ export function checkBlueprint(input, catalog) {
     if (ANCHORS[n.anchor]?.kind !== 'spot') errors.push(`npc ${n.id}: anchor ${n.anchor} must be a spot anchor P1-P3`);
     useAnchor(n.anchor, `npc ${n.id}`);
   }
+  if (bp.mentor && !npcs.has(bp.mentor)) errors.push(`mentor ${bp.mentor} is not an npc`);
+  if (bp.order && !npcs.has(bp.order.npc)) errors.push(`order.npc ${bp.order.npc} is not an npc`);
 
   if (bp.game?.kind === 'sparring') {
     if (!npcs.has(bp.game.opponent)) errors.push('game.opponent must name a listed NPC');

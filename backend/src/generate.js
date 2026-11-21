@@ -57,7 +57,8 @@ export function responseSchema(menu, { propEnums = false } = {}) {
   const s = z.toJSONSchema(Blueprint, { io: 'input' });
   delete s.$schema;
   delete s.properties.version;
-  s.required = [...s.required.filter(key => key !== 'version'), 'venue'];
+  // The realism fields (mentor, career) are optional for stored shifts but always written for new ones.
+  s.required = [...s.required.filter(key => key !== 'version'), 'venue', 'mentor', 'career'];
   const P = s.properties;
   // Anchor enums are small. The semantic validator checks catalog IDs against the full catalog.
   if (propEnums) {
@@ -138,6 +139,14 @@ export function systemPrompt(menu, example) {
     '  An event with a null `close` is also fine (e.g. a customer changes the order or the delivery spot).',
     '- npcs: realistic co-workers / customers. lines.intro briefs the task (<= 16 words), lines.done congratulates (<= 8 words).',
     '- occupation: just the short job name. briefing: 1-2 short sentences, second person. title: <= 5 words. facts: 2-3 true, interesting facts about the real job.',
+    '',
+    'REALISM (the player is deciding whether this could be their career, so show the real job honestly):',
+    '- Make the task path the real sequence a worker follows, with the real names of tools, materials and checks. Cast people the job actually serves and works beside.',
+    '- tip on EVERY objective, including replaceRemaining: one real technique, standard or reason a professional uses for that step (<= 16 words), e.g. "Tamp level and firm so the water flows evenly." Never give instructions that would be dangerous to try without training.',
+    '- mentor: id of the experienced coworker who coaches (says each tip). Not a customer.',
+    '- npcs[].lines.ambient: 1-3 short call-outs a coworker really says on shift, in the trade jargon (<= 6 words, e.g. "Behind!", "Two flat whites on bar"). Empty for customers.',
+    '- order (workflow and challenge shifts; null for sparring): the person waiting on the finished work. npc = that NPC, text = exactly what they asked for in real terms (<= 10 words), patienceSec = how long they wait happily in this game (60-240), waiting = what they say once the wait runs long (<= 10 words). The last objectives deliver it.',
+    '- career: how the real job feels, honestly, including the hard parts. dayInLife (<= 40 words, a typical real shift beyond this scene), schedule (<= 12 words: typical hours, shifts, weekends), physical / people / pressure each { level 1-5, note <= 12 words }, loves (2-3 things people in the job value, <= 10 words each), hard (2-3 real downsides, <= 10 words each), start (<= 25 words: common training, certification or entry route). No pay figures.',
   ];
   if (example) lines.push('', 'EXAMPLE OUTPUT (format reference only, design your own for the requested occupation):', JSON.stringify(example));
   return lines.join('\n');

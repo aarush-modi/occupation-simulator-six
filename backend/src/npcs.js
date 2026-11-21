@@ -3,6 +3,7 @@ import { ANCHORS, ROOM, SUPPLY_COUNTERS } from '../../frontend/src/shared/layout
 const actions = ['prepare', 'stock', 'inspect', 'serve'];
 const verbs = { prepare: 'Preparing the station', stock: 'Restocking', inspect: 'Checking equipment', serve: 'Working the service counter' };
 const spacing = 0.45;
+const CALLOUT_GAP_MS = 20000; // at most one coworker call-out ("Behind!") this often across the room
 const countX = Math.floor((ROOM.W - 0.8) / spacing);
 const countZ = Math.floor((ROOM.D - 0.8) / spacing);
 const distance = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
@@ -124,6 +125,7 @@ export class RoomCrowd {
       speed: 0, mode: 'idle', activity: '', until: 0, path: [], talkTo: null, greeted: new Set(), visits: 0,
     }));
     this.lastTime = null;
+    this.lastCallout = -Infinity;
     this.lastPlan = null;
     this.activePlan = false;
     this.plans = new Map();
@@ -257,6 +259,11 @@ export class RoomCrowd {
       if (actor.mode === 'travel') {
         actor.mode = 'work'; actor.until = now + 2900 + actor.index * 450;
         if (actor.station) actor.yaw = yawToward(actor.pos, ANCHORS[this.stations.get(actor.station).anchor].pos);
+        const callouts = actor.lines?.ambient ?? [];
+        if (callouts.length && now - this.lastCallout >= CALLOUT_GAP_MS) {
+          this.lastCallout = now;
+          events.push({ type: 'say', npc: actor.id, text: callouts[actor.visits % callouts.length] });
+        }
       }
       if (actor.until > now || actor.talkTo) continue;
       actor.audience = null;

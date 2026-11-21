@@ -26,13 +26,8 @@ export const useShift = create((set, get) => ({
     set({ toast: { text, kind, id } });
     setTimeout(() => { if (get().toast?.id === id) set({ toast: null }); }, ms);
   },
-  say: (who, text, ms) => {
-    const id = Math.random();
-    set({ subtitle: { who, text, id } });
-    speak(who, text);
-    const dur = ms ?? Math.min(9000, 2200 + text.length * 55);
-    setTimeout(() => { if (get().subtitle?.id === id) set({ subtitle: null }); }, dur);
-  },
+  // Lines queue so a completion remark and the next coaching tip do not cut each other off.
+  say: (who, text, ms) => lines.push({ who, text, ms }, set),
   showBanner: (text, who, ms = 7000) => {
     const id = Math.random();
     set({ banner: { text, who, id } });
@@ -40,19 +35,50 @@ export const useShift = create((set, get) => ({
   },
 }));
 
+// Plays one NPC line at a time: subtitle plus speech. The next line starts once the subtitle time has passed and
+// the voice has finished. Old lines are dropped when the queue backs up, so speech never lags far behind play.
+export function createLineQueue({ speakLine = speak, setTimer = setTimeout, max = 3 } = {}) {
+  const queue = [];
+  let busy = false;
+  function next(set) {
+    const line = queue.shift();
+    if (!line) { busy = false; set({ subtitle: null }); return; }
+    busy = true;
+    const id = Math.random();
+    set({ subtitle: { who: line.who, text: line.text, id } });
+    let waiting = 2;
+    const done = () => { if (--waiting === 0) next(set); };
+    speakLine(line.who, line.text, done);
+    setTimer(done, line.ms ?? Math.min(9000, 2200 + line.text.length * 55));
+  }
+  return {
+    push(line, set) {
+      queue.push(line);
+      while (queue.length > max) queue.shift();
+      if (!busy) next(set);
+    },
+    get pending() { return queue.length; },
+  };
+}
+const lines = createLineQueue();
+
 const voiceFor = (who) => {
   let h = 0;
   for (const c of String(who)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return { pitch: 0.8 + (h % 50) / 100, rate: 0.98 + ((h >> 6) % 12) / 100 };
 };
 
-function speak(who, text) {
-  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+function speak(who, text, onEnd = () => {}) {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return onEnd();
   try {
-    window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     const v = voiceFor(who);
     u.pitch = v.pitch; u.rate = v.rate; u.volume = 0.9;
+    let ended = false;
+    const end = () => { if (!ended) { ended = true; onEnd(); } };
+    u.onend = end; u.onerror = end;
+    // Some browsers never fire onend for a voice they cannot load: give up after a generous limit.
+    setTimeout(end, 4000 + text.length * 90);
     window.speechSynthesis.speak(u);
-  } catch {}
+  } catch { onEnd(); }
 }

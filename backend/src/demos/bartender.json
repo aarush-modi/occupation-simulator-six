@@ -5,56 +5,266 @@
   "briefing": "The bar is filling up. Chill a glass, pour the cocktail and get it to the guest at the service counter.",
   "shell": "cafe",
   "stations": [
-    { "id": "ice", "prop": "bar_ice_well", "anchor": "N2", "label": "Ice well" },
-    { "id": "bar", "prop": "cocktail_bar_station", "anchor": "N3", "label": "Cocktail station" },
-    { "id": "pickup", "prop": "cafe_pickup_counter", "anchor": "I4", "label": "Service counter" }
+    {
+      "id": "ice",
+      "prop": "bar_ice_well",
+      "anchor": "N2",
+      "label": "Ice well"
+    },
+    {
+      "id": "bar",
+      "prop": "cocktail_bar_station",
+      "anchor": "N3",
+      "label": "Cocktail station"
+    },
+    {
+      "id": "pickup",
+      "prop": "cafe_pickup_counter",
+      "anchor": "I4",
+      "label": "Service counter"
+    }
   ],
   "items": [
-    { "id": "glass", "prop": "cocktail_glass", "anchor": "S1", "label": "Cocktail glass" },
-    { "id": "bottle", "prop": "liquor_bottle", "anchor": "S2", "label": "Bottle of gin" },
-    { "id": "shaker", "prop": "cocktail_shaker", "anchor": "S3", "label": "Cocktail shaker" }
+    {
+      "id": "glass",
+      "prop": "cocktail_glass",
+      "anchor": "S1",
+      "label": "Cocktail glass"
+    },
+    {
+      "id": "bottle",
+      "prop": "liquor_bottle",
+      "anchor": "S2",
+      "label": "Bottle of gin"
+    },
+    {
+      "id": "shaker",
+      "prop": "cocktail_shaker",
+      "anchor": "S3",
+      "label": "Cocktail shaker"
+    }
   ],
   "decor": [
-    { "prop": "cafe_bar_stool", "anchor": "I2" },
-    { "prop": "cafe_bistro_table", "anchor": "I3" },
-    { "prop": "cafe_menu_board_stand", "anchor": "W1" },
-    { "prop": "cafe_potted_plant", "anchor": "E1" }
+    {
+      "prop": "cafe_bar_stool",
+      "anchor": "I2"
+    },
+    {
+      "prop": "cafe_bistro_table",
+      "anchor": "I3"
+    },
+    {
+      "prop": "cafe_menu_board_stand",
+      "anchor": "W1"
+    },
+    {
+      "prop": "cafe_potted_plant",
+      "anchor": "E1"
+    }
   ],
   "npcs": [
     {
-      "id": "rosa", "name": "Rosa", "role": "Head bartender", "anchor": "P3", "outfit": "apron",
-      "lines": { "intro": "Ice the glass, pour the gin, and send it to the service counter.", "done": "Clean pour. The guests are happy." }
+      "id": "rosa",
+      "name": "Rosa",
+      "role": "Head bartender",
+      "anchor": "P3",
+      "outfit": "apron",
+      "lines": {
+        "intro": "Ice the glass, pour the gin, and send it to the service counter.",
+        "done": "Clean pour. The guests are happy.",
+        "ambient": [
+          "Behind!",
+          "Corner!",
+          "Ice coming through"
+        ]
+      }
     },
     {
-      "id": "guest", "name": "Dev", "role": "Guest", "anchor": "P1", "outfit": "suit",
-      "lines": { "intro": "A gin cocktail when you get a second, please!", "done": "Cheers!" }
+      "id": "guest",
+      "name": "Dev",
+      "role": "Guest",
+      "anchor": "P1",
+      "outfit": "suit",
+      "lines": {
+        "intro": "A gin cocktail when you get a second, please!",
+        "done": "Cheers!"
+      }
     }
   ],
   "objectives": [
-    { "id": "grab_glass", "verb": "grab", "target": "glass", "label": "Grab a cocktail glass", "skill": "none" },
-    { "id": "ice_glass", "verb": "place", "target": "ice.well", "item": "glass", "label": "Set the glass in the ice well", "skill": "steady" },
-    { "id": "chill", "verb": "press", "target": "ice.ice", "label": "Chill the glass with ice", "skill": "hold", "say": { "npc": "rosa", "text": "Always chill the glass first." } },
-    { "id": "take_glass", "verb": "grab", "target": "glass", "label": "Take the chilled glass", "skill": "none" },
-    { "id": "station_glass", "verb": "place", "target": "bar.glass", "item": "glass", "label": "Put the glass on the cocktail station", "skill": "steady" },
-    { "id": "grab_bottle", "verb": "grab", "target": "bottle", "label": "Grab the gin", "skill": "none" },
-    { "id": "station_bottle", "verb": "place", "target": "bar.bottle", "item": "bottle", "label": "Set the bottle at the pour spot", "skill": "none" },
-    { "id": "pour", "verb": "press", "target": "bar.pour", "label": "Pour a measured shot", "skill": "timing", "say": { "npc": "rosa", "text": "Right on the line. Nice." } },
-    { "id": "take_drink", "verb": "grab", "target": "glass", "label": "Pick up the cocktail", "skill": "steady" },
-    { "id": "serve", "verb": "place", "target": "pickup.pickup", "item": "glass", "label": "Serve it at the service counter", "skill": "steady", "say": { "npc": "guest", "text": "Looks amazing, thank you!" } }
+    {
+      "id": "grab_glass",
+      "verb": "grab",
+      "target": "glass",
+      "label": "Grab a cocktail glass",
+      "skill": "none",
+      "tip": "Hold glasses by the stem or base, never by the rim."
+    },
+    {
+      "id": "ice_glass",
+      "verb": "place",
+      "target": "ice.well",
+      "item": "glass",
+      "label": "Set the glass in the ice well",
+      "skill": "steady",
+      "tip": "A chilled glass keeps a stirred drink cold and crisp for longer."
+    },
+    {
+      "id": "chill",
+      "verb": "press",
+      "target": "ice.ice",
+      "label": "Chill the glass with ice",
+      "skill": "hold",
+      "say": {
+        "npc": "rosa",
+        "text": "Always chill the glass first."
+      },
+      "tip": "Fill the glass right to the top with ice. More ice melts slower."
+    },
+    {
+      "id": "take_glass",
+      "verb": "grab",
+      "target": "glass",
+      "label": "Take the chilled glass",
+      "skill": "none",
+      "tip": "Tip out the ice and meltwater before you pour."
+    },
+    {
+      "id": "station_glass",
+      "verb": "place",
+      "target": "bar.glass",
+      "item": "glass",
+      "label": "Put the glass on the cocktail station",
+      "skill": "steady",
+      "tip": "Build drinks on the bar mat so spills stay off the bar top."
+    },
+    {
+      "id": "grab_bottle",
+      "verb": "grab",
+      "target": "bottle",
+      "label": "Grab the gin",
+      "skill": "none",
+      "tip": "Read the label every time. The wrong spirit means a remake."
+    },
+    {
+      "id": "station_bottle",
+      "verb": "place",
+      "target": "bar.bottle",
+      "item": "bottle",
+      "label": "Set the bottle at the pour spot",
+      "skill": "none",
+      "tip": "Keep bottles label out so you and the guest can both see them."
+    },
+    {
+      "id": "pour",
+      "verb": "press",
+      "target": "bar.pour",
+      "label": "Pour a measured shot",
+      "skill": "timing",
+      "say": {
+        "npc": "rosa",
+        "text": "Right on the line. Nice."
+      },
+      "tip": "Use a jigger for every pour. Even measures keep drinks and costs right."
+    },
+    {
+      "id": "take_drink",
+      "verb": "grab",
+      "target": "glass",
+      "label": "Pick up the cocktail",
+      "skill": "steady",
+      "tip": "Hold it low on the stem so your hand does not warm the drink."
+    },
+    {
+      "id": "serve",
+      "verb": "place",
+      "target": "pickup.pickup",
+      "item": "glass",
+      "label": "Serve it at the service counter",
+      "skill": "steady",
+      "say": {
+        "npc": "guest",
+        "text": "Looks amazing, thank you!"
+      },
+      "tip": "Set it on a napkin in front of the guest, facing them."
+    }
   ],
   "event": {
     "after": "pour",
     "delaySec": 3,
-    "announce": { "npc": "rosa", "text": "Dev moved down the bar. Serve it at the far end of the counter instead, then let him know." },
+    "announce": {
+      "npc": "rosa",
+      "text": "Dev moved down the bar. Serve it at the far end of the counter instead, then let him know."
+    },
     "replaceRemaining": [
-      { "id": "take_drink2", "verb": "grab", "target": "glass", "label": "Pick up the cocktail", "skill": "steady" },
-      { "id": "serve2", "verb": "place", "target": "pickup.pickup2", "item": "glass", "label": "Serve it at the far end of the counter", "skill": "steady" },
-      { "id": "tell_guest", "verb": "talk", "target": "guest", "label": "Let Dev know his drink is ready", "skill": "none", "say": { "npc": "guest", "text": "Found it, cheers!" } }
+      {
+        "id": "take_drink2",
+        "verb": "grab",
+        "target": "glass",
+        "label": "Pick up the cocktail",
+        "skill": "steady",
+        "tip": "Hold it low on the stem so your hand does not warm the drink."
+      },
+      {
+        "id": "serve2",
+        "verb": "place",
+        "target": "pickup.pickup2",
+        "item": "glass",
+        "label": "Serve it at the far end of the counter",
+        "skill": "steady",
+        "tip": "Keep track of where every guest sits. Guests move all night."
+      },
+      {
+        "id": "tell_guest",
+        "verb": "talk",
+        "target": "guest",
+        "label": "Let Dev know his drink is ready",
+        "skill": "none",
+        "say": {
+          "npc": "guest",
+          "text": "Found it, cheers!"
+        },
+        "tip": "Make eye contact and name the drink as you hand it over."
+      }
     ]
   },
   "facts": [
     "A standard shot is measured with a jigger, usually 1.5 ounces in North America.",
     "Chilling the glass keeps a cocktail cold without extra dilution.",
     "Bartenders often need a responsible-serving certification to pour alcohol."
-  ]
+  ],
+  "mentor": "rosa",
+  "order": {
+    "npc": "guest",
+    "text": "A gin cocktail in a chilled glass",
+    "patienceSec": 180,
+    "waiting": "Any chance that gin is coming soon?"
+  },
+  "career": {
+    "dayInLife": "Set up before doors open: cut garnishes, stock ice and bottles, check the kegs. Then serve a busy room for hours while checking IDs and watching how much guests drink. After close, clean, count the till and restock.",
+    "schedule": "Evenings, late nights and weekends, often finishing after midnight.",
+    "physical": {
+      "level": 4,
+      "note": "Standing for hours and lifting ice, kegs and cases."
+    },
+    "people": {
+      "level": 5,
+      "note": "Talking with guests all night, reading moods, refusing service."
+    },
+    "pressure": {
+      "level": 4,
+      "note": "Rushes stack orders, and you must stay accurate and calm."
+    },
+    "loves": [
+      "A lively, social atmosphere",
+      "Making drinks people really enjoy",
+      "Good tips on busy nights"
+    ],
+    "hard": [
+      "Late nights that throw off your sleep",
+      "Handling guests who have had too much",
+      "Long, sticky closing cleanups"
+    ],
+    "start": "You must be of legal serving age. Many start as barbacks. A responsible alcohol service certificate is often required."
+  }
 }

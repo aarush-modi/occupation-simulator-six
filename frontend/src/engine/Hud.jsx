@@ -1,7 +1,7 @@
 'use client';
 // HUD for generated shifts (F7): task + list, crosshair prompt, denial toasts, NPC subtitles, event banner,
 // connection state, skill widgets (reused from the rig game), webcam panel, briefing and review screens.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useShift } from './store';
 import { closeSkill } from './actions';
 import { createRoom } from './net';
@@ -79,6 +79,7 @@ function TaskPanel() {
       </div>
       {challenge && <div style={{ marginTop: 8, fontSize: 13, color: '#d1d8e8' }}>Team {challenge.points} / {bp.game.goal}{rival && ` · ${rival.name} ${challenge.rivalPoints}`}</div>}
       <div style={{ marginTop: 8, fontSize: 18, fontWeight: 700, color: '#fff', lineHeight: 1.3 }}>{cur ? cur.label : 'Shift complete'}</div>
+      {cur?.tip && <div style={{ marginTop: 5, fontSize: 13, color: '#d8d0c4', lineHeight: 1.4 }}><span style={{ color: ui.accent, fontWeight: 700 }}>Pro tip </span>{cur.tip}</div>}
       <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 3 }}>
         {st.objectives.map((o, i) => {
           const isDone = done.has(o.id) || i < st.cur;
@@ -91,6 +92,60 @@ function TaskPanel() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// The coworker who coaches: the blueprint's mentor, else the first NPC who is not the waiting customer.
+export function mentorOf(bp) {
+  return bp.npcs.find(npc => npc.id === bp.mentor) ?? bp.npcs.find(npc => npc.id !== bp.order?.npc) ?? null;
+}
+
+// Says each step's tip when the step starts, once per step.
+function Coach() {
+  const bp = useShift((s) => s.blueprint);
+  const cur = useShift((s) => s.state?.objectives?.[s.state.cur]);
+  const say = useShift((s) => s.say);
+  const spoken = useRef(new Set());
+  useEffect(() => {
+    if (!cur?.tip || spoken.current.has(cur.id)) return;
+    spoken.current.add(cur.id);
+    say(mentorOf(bp)?.name ?? 'Coach', cur.tip);
+  }, [bp, cur, say]);
+  return null;
+}
+
+// The customer waiting on this shift, with how long they have waited against their patience.
+function OrderTicket() {
+  useTick(500);
+  const bp = useShift((s) => s.blueprint);
+  const st = useShift((s) => s.state);
+  const say = useShift((s) => s.say);
+  const complained = useRef(false);
+  const order = bp?.order;
+  const customer = order && bp.npcs.find(npc => npc.id === order.npc);
+  const waited = st ? Date.now() - st.startedAt : 0;
+  const share = order ? waited / (order.patienceSec * 1000) : 0;
+  useEffect(() => {
+    if (order && customer && share >= 1 && !complained.current) {
+      complained.current = true;
+      say(customer.name, order.waiting);
+    }
+  }, [order, customer, share, say]);
+  if (!order || !customer) return null;
+  const color = share >= 1 ? '#ff6a5c' : share >= 0.75 ? ui.accent : '#3cff8a';
+  const patience = fmtTime(order.patienceSec * 1000);
+  return (
+    <div style={{ position: 'absolute', top: 64, right: 20, width: 250, padding: '10px 14px 12px', ...ui.panel, borderTop: `3px solid ${color}`, color: '#fff' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 11, letterSpacing: 2, color: '#a9a39a', textTransform: 'uppercase' }}>
+        <span>Order · {customer.name}</span>
+        <span style={{ color, fontVariantNumeric: 'tabular-nums', letterSpacing: 0, fontSize: 13, fontWeight: 700 }}>{fmtTime(waited)}</span>
+      </div>
+      <div style={{ marginTop: 6, fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>{order.text}</div>
+      <div style={{ marginTop: 8, height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ width: `${Math.min(1, share) * 100}%`, height: '100%', background: color }} />
+      </div>
+      <div style={{ marginTop: 5, fontSize: 11, color: share >= 1 ? '#ff9a8a' : '#a9a39a' }}>{share >= 1 ? `Waiting longer than ${patience}` : `Happy to wait ${patience}`}</div>
     </div>
   );
 }
@@ -223,6 +278,61 @@ function Intro() {
   );
 }
 
+function Bullets({ items, color = ui.accent }) {
+  return items.map((text, i) => <div key={i} style={{ marginTop: i ? 7 : 0, display: 'flex', gap: 8 }}><span style={{ color }}>•</span><span>{text}</span></div>);
+}
+
+function Demand({ label, demand }) {
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontWeight: 700, color: '#fff' }}>{label}</span>
+        <span aria-label={`${demand.level} of 5`} style={{ display: 'flex', gap: 3 }}>
+          {[1, 2, 3, 4, 5].map(n => <span key={n} style={{ width: 18, height: 6, borderRadius: 3, background: n <= demand.level ? ui.accent : 'rgba(255,255,255,0.12)' }} />)}
+        </span>
+      </div>
+      <div style={{ marginTop: 3, color: '#bbb', fontSize: 13 }}>{demand.note}</div>
+    </div>
+  );
+}
+
+// What the real job is like, so the player can judge whether it suits them.
+function Career({ career, facts, occupation }) {
+  const card = { padding: 18, ...ui.panel, fontSize: 14, lineHeight: 1.55, color: '#ddd' };
+  const heading = { fontWeight: 800, color: '#fff', marginBottom: 8 };
+  return (
+    <>
+      <div style={card}>
+        <div style={heading}>A real day as a {occupation}</div>
+        <div>{career.dayInLife}</div>
+        <div style={{ marginTop: 8, color: '#bbb', fontSize: 13 }}><b style={{ color: '#ddd' }}>Hours:</b> {career.schedule}</div>
+        <Demand label="Physical" demand={career.physical} />
+        <Demand label="People" demand={career.people} />
+        <Demand label="Pressure" demand={career.pressure} />
+      </div>
+      <div style={card}>
+        <div style={heading}>What people love</div>
+        <Bullets items={career.loves} color="#3cff8a" />
+      </div>
+      <div style={card}>
+        <div style={heading}>The hard parts</div>
+        <Bullets items={career.hard} color="#ff8a7a" />
+      </div>
+      <div style={{ ...card, gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+        <div>
+          <div style={heading}>How to get started</div>
+          <div>{career.start}</div>
+        </div>
+        <div>
+          <div style={heading}>Did you know</div>
+          <Bullets items={facts} />
+        </div>
+      </div>
+      <div style={{ gridColumn: '1 / -1', color: ui.accent, fontSize: 16, fontWeight: 700 }}>Could you see yourself doing this every day?</div>
+    </>
+  );
+}
+
 function Review() {
   const bp = useShift((s) => s.blueprint);
   const st = useShift((s) => s.state);
@@ -238,6 +348,11 @@ function Review() {
   else {
     metrics.push(['Steps completed', `${st.done.length} / ${st.objectives.length}`]);
     if (game?.kind === 'challenge') metrics.push(['Team points', `${game.points} / ${bp.game.goal}`]);
+    const customer = bp.order && bp.npcs.find(npc => npc.id === bp.order.npc);
+    if (customer) {
+      const patience = bp.order.patienceSec * 1000;
+      metrics.push([`${customer.name}'s wait`, elapsed <= patience ? `${fmtTime(elapsed)} ✓` : `${fmtTime(elapsed)}, hoped for ${fmtTime(patience)}`]);
+    }
   }
   const again = async () => {
     setBusy(true);
@@ -264,11 +379,13 @@ function Review() {
             </div>
           ))}
         </div>
-        <div style={{ padding: 18, ...ui.panel, fontSize: 14, lineHeight: 1.55, color: '#ddd' }}>
-          <div style={{ fontWeight: 800, color: '#fff', marginBottom: 8 }}>The real job</div>
-          {bp.facts.map((f, i) => <div key={i} style={{ marginTop: i ? 8 : 0, display: 'flex', gap: 8 }}><span style={{ color: ui.accent }}>•</span><span>{f}</span></div>)}
-          <div style={{ marginTop: 12, color: ui.accent }}>Was this you?</div>
-        </div>
+        {bp.career ? <Career career={bp.career} facts={bp.facts} occupation={bp.occupation} /> : (
+          <div style={{ padding: 18, ...ui.panel, fontSize: 14, lineHeight: 1.55, color: '#ddd' }}>
+            <div style={{ fontWeight: 800, color: '#fff', marginBottom: 8 }}>The real job</div>
+            <Bullets items={bp.facts} />
+            <div style={{ marginTop: 12, color: ui.accent }}>Was this you?</div>
+          </div>
+        )}
         <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 12 }}>
           <button onClick={again} disabled={busy} style={{ padding: '12px 26px', fontWeight: 800, borderRadius: 8, border: 0, background: ui.accent, color: '#111', cursor: 'pointer', fontSize: 16 }}>{busy ? 'Starting...' : 'Play again'}</button>
           <a href="/" style={{ padding: '12px 26px', fontWeight: 700, borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', textDecoration: 'none', fontSize: 16 }}>Back to lobby</a>
@@ -288,7 +405,7 @@ export default function Hud() {
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', fontFamily: ui.font, zIndex: 10 }}>
       <style>{KEYFRAMES}</style>
-      {phase === 'play' && started && <><Banner /><TaskPanel /><Prompt /><Toast /><ObjectiveFlash /><Subtitle /><SkillDialog /></>}
+      {phase === 'play' && started && <><Banner /><TaskPanel /><OrderTicket /><Coach /><Prompt /><Toast /><ObjectiveFlash /><Subtitle /><SkillDialog /></>}
       {phase === 'play' && !started && <Intro />}
       {phase === 'review' && <Review />}
       {phase !== 'review' && <ConnBadge />}

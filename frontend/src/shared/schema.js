@@ -49,6 +49,20 @@ export const Objective = z.object({
   label: z.string(),
   skill: z.enum(['none', 'timing', 'steady', 'hold']).default('none'),
   say: z.object({ npc: npcRef, text: z.string() }).optional(), // NPC line when this objective is completed
+  tip: z.string().optional(), // real technique or reason for this step, said by the mentor when the step starts
+});
+
+// How the real job feels, shown on the review screen. level: 1 (low) to 5 (high).
+const Demand = z.object({ level: z.int().min(1).max(5), note: z.string() });
+const Career = z.object({
+  dayInLife: z.string(),
+  schedule: z.string(),
+  physical: Demand,
+  people: Demand,
+  pressure: Demand,
+  loves: z.array(z.string()).min(2).max(3),
+  hard: z.array(z.string()).min(2).max(3),
+  start: z.string(), // how people get into the job
 });
 
 const GeneratedGame = z.union([
@@ -96,7 +110,11 @@ export const Blueprint = z.object({
   npcs: z.array(z.object({
     id: z.string(), name: z.string(), role: z.string(), anchor,
     outfit: z.enum(['scrubs', 'labCoat', 'apron', 'coverall', 'suit', 'casual', 'hivis']).default('casual'),
-    lines: z.object({ intro: z.string(), done: z.string() }),
+    lines: z.object({
+      intro: z.string(),
+      done: z.string(),
+      ambient: z.array(z.string()).max(3).optional(), // short call-outs while working ("Behind!")
+    }),
   })).min(1).max(3),
   objectives: z.array(Objective).max(10),
   event: z.object({
@@ -107,6 +125,10 @@ export const Blueprint = z.object({
     replaceRemaining: z.array(Objective).min(1).max(6), // new objectives that replace everything after `after`
   }).optional(),
   facts: z.array(z.string()).min(2).max(6),
+  mentor: npcRef.optional(), // coworker who coaches each step's tip
+  // The customer waiting on this shift's work, and how long they wait happily.
+  order: z.object({ npc: npcRef, text: z.string(), patienceSec: z.int().min(30).max(600), waiting: z.string() }).optional(),
+  career: Career.optional(),
 });
 
 export { LIMITS };
