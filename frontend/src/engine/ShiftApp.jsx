@@ -12,6 +12,7 @@ import World from './World.jsx';
 import { LabelLayer, LabelProjector } from './Labels';
 import LocalPlayer from './LocalPlayer';
 import Hud, { ui, KEYFRAMES } from './Hud';
+import { BACKEND } from './config';
 import { PostFX } from '../game/Look';
 
 // Fallback labels when the server's demo list cannot be fetched.
@@ -168,6 +169,12 @@ function Lobby() {
             {loading && !failed && <span style={{ width: 18, height: 18, borderRadius: 18, border: '3px solid rgba(255,255,255,0.15)', borderTopColor: ui.accent, animation: 'ws-spin 0.8s linear infinite' }} />}
             {s.conn !== 'open' && s.status === 'connecting' ? 'Connecting to the room...' : failed ? 'We could not build that shift.' : s.status === 'ready' ? 'Shift ready, joining...' : 'Generating your shift...'}
           </div>
+          {/* On https with a self-signed certificate, the browser must accept the game server's address once too. */}
+          {s.conn !== 'open' && s.status === 'connecting' && waited > 4000 && typeof window !== 'undefined' && window.location.protocol === 'https:' && (
+            <div style={{ marginTop: 12, maxWidth: 460, padding: '10px 14px', borderRadius: 10, background: 'rgba(242,178,51,0.1)', border: '1px solid rgba(242,178,51,0.35)', color: '#e8dfd2', fontSize: 14, lineHeight: 1.5 }}>
+              Still connecting? This laptop's browser has to trust the game server once. Open <a href={`${BACKEND}/health`} target="_blank" rel="noreferrer" style={{ color: ui.accent, fontWeight: 700 }}>{BACKEND}</a>, choose Advanced, then Proceed, and come back to this tab.
+            </div>
+          )}
           {failed && s.error && <div style={{ color: '#a9a097', fontSize: 13, marginTop: 6 }}>{String(s.error).slice(0, 160)}</div>}
           {!failed && s.status === 'generating' && <div style={{ color: '#a9a097', fontSize: 14, marginTop: 8 }}>Building the workplace, the crew and the task. Usually a few seconds.</div>}
           {offerDemo && (

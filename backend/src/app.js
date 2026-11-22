@@ -7,6 +7,7 @@ import { createNpcPlanner } from './npcs.js';
 //   POST /api/rooms/:id/demo  { occupation? }  -> loads a prevalidated demo shift
 //   WS   /room/:id
 import { createServer } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import os from 'node:os';
 import { WebSocketServer } from 'ws';
 import { RoomManager } from './rooms.js';
@@ -20,8 +21,9 @@ export function lanAddress() {
   return 'localhost';
 }
 
-export function inviteUrlFor(roomId, env = process.env) {
-  const base = env.PUBLIC_FRONTEND_URL?.replace(/\/+$/, '') || `http://${lanAddress()}:${env.FRONTEND_PORT || 3000}`;
+/** Invite link on the host's LAN address. https when the backend serves HTTPS (the frontend then runs dev:https). */
+export function inviteUrlFor(roomId, env = process.env, secure = false) {
+  const base = env.PUBLIC_FRONTEND_URL?.replace(/\/+$/, '') || `${secure ? 'https' : 'http'}://${lanAddress()}:${env.FRONTEND_PORT || 3000}`;
   return `${base}/shift?room=${encodeURIComponent(roomId)}`;
 }
 
@@ -63,12 +65,14 @@ function readJson(req) {
 }
 
 /**
- * @param {{ catalog: Array, demos: Array, generator: { generate(occupation): Promise }, env?: object, log?: Console }} deps
+ * @param {{ catalog: Array, demos: Array, generator: { generate(occupation): Promise }, env?: object, log?: Console, tls?: { key, cert } | null }} deps
+ * With `tls` the API is HTTPS and the room sockets are wss on the same port, so pages served over https can reach it.
  */
-export function createApp({ catalog, demos, generator, env = process.env, log = console }) {
+export function createApp({ catalog, demos, generator, env = process.env, log = console, tls = null }) {
+  const secure = Boolean(tls);
   const rooms = new RoomManager({ catalog, demos, generator, log, planNpcs: createNpcPlanner({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_NPC_MODEL }) });
 
-  const server = createServer(async (req, res) => {
+  const handler = async (req, res) => {
     const origin = req.headers.origin;
     const headers = { 'content-type': 'application/json; charset=utf-8', vary: 'Origin' };
     if (origin && originAllowed(origin, env)) {
@@ -98,11 +102,11 @@ export function createApp({ catalog, demos, generator, env = process.env, log = 
           if (!occupation) return reply(400, { error: 'occupation is required' });
           const room = rooms.create(occupation);
           log.log(`[room] ${room.id} created for "${occupation}"`);
-          return reply(201, { roomId: room.id, inviteUrl: inviteUrlFor(room.id, env), status: room.status });
+          return reply(201, { roomId: room.id, inviteUrl: inviteUrlFor(room.id, env, secure), status: room.status });
         }
         const room = parts[2] ? rooms.get(parts[2]) : null;
         if (parts.length >= 3 && !room) return reply(404, { error: 'room not found' });
-        if (req.method === 'GET' && parts.length === 3) return reply(200, { ...room.summary(), inviteUrl: inviteUrlFor(room.id, env) });
+        if (req.method === 'GET' && parts.length === 3) return reply(200, { ...room.summary(), inviteUrl: inviteUrlFor(room.id, env, secure) });
         if (req.method === 'POST' && parts.length === 4 && parts[3] === 'demo') {
           const body = await readJson(req);
           const r = room.loadDemo(body.occupation ? String(body.occupation) : undefined);
@@ -115,7 +119,8 @@ export function createApp({ catalog, demos, generator, env = process.env, log = 
     } catch (err) {
       return reply(err.status ?? 500, { error: err.message ?? 'server error' });
     }
-  });
+  };
+  const server = tls ? createHttpsServer(tls, handler) : createServer(handler);
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
   server.on('upgrade', (req, socket, head) => {
@@ -144,5 +149,5 @@ export function createApp({ catalog, demos, generator, env = process.env, log = 
       server.close(() => resolve());
     });
 
-  return { server, rooms, close };
+  return { server, rooms, close, secure };
 }

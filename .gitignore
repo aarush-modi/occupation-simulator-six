@@ -6,4 +6,5 @@ out/
 !.env.example
 logs/
 frontend/public/mediapipe/
+frontend/certificates/
 dev.log
