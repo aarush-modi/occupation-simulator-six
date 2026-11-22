@@ -1,0 +1,157 @@
+{
+ "shells": [
+  "salon"
+ ],
+ "slots": [],
+ "controls": [],
+ "kind": "item",
+ "id": "shampoo_bottle",
+ "name": "Salon shampoo pump bottle",
+ "tags": [
+  "shampoo",
+  "hairstylist",
+  "barber"
+ ],
+ "size": [
+  0.12,
+  0.26,
+  0.09
+ ],
+ "parts": [
+  {
+   "t": "lathe",
+   "pts": [
+    [
+     0,
+     0
+    ],
+    [
+     0.036,
+     0
+    ],
+    [
+     0.04,
+     0.01
+    ],
+    [
+     0.04,
+     0.17
+    ],
+    [
+     0.03,
+     0.19
+    ],
+    [
+     0.013,
+     0.2
+    ]
+   ],
+   "p": [
+    0,
+    0,
+    0
+   ],
+   "m": "plasticWhite",
+   "seg": 32,
+   "name": "bottle"
+  },
+  {
+   "t": "cyl",
+   "rt": 0.0405,
+   "h": 0.1,
+   "p": [
+    0,
+    0.09,
+    0
+   ],
+   "m": "plasticBlue",
+   "name": "label"
+  },
+  {
+   "t": "cyl",
+   "rt": 0.041,
+   "h": 0.02,
+   "p": [
+    0,
+    0.11,
+    0
+   ],
+   "m": "flowerWhite",
+   "name": "labelBrand"
+  },
+  {
+   "t": "cyl",
+   "rt": 0.016,
+   "h": 0.02,
+   "p": [
+    0,
+    0.205,
+    0
+   ],
+   "m": "plasticBlack",
+   "name": "collar"
+  },
+  {
+   "t": "cyl",
+   "rt": 0.006,
+   "h": 0.03,
+   "p": [
+    0,
+    0.225,
+    0
+   ],
+   "m": "plasticBlack",
+   "name": "stem"
+  },
+  {
+   "t": "box",
+   "s": [
+    0.03,
+    0.018,
+    0.03
+   ],
+   "p": [
+    0,
+    0.245,
+    0
+   ],
+   "m": "plasticBlack",
+   "round": 0.006,
+   "name": "pumpHead"
+  },
+  {
+   "t": "cyl",
+   "rt": 0.004,
+   "h": 0.04,
+   "p": [
+    0.03,
+    0.248,
+    0
+   ],
+   "m": "plasticBlack",
+   "r": [
+    0,
+    0,
+    1.5708
+   ],
+   "name": "nozzle"
+  },
+  {
+   "t": "torus",
+   "R": 0.016,
+   "tube": 0.003,
+   "p": [
+    0,
+    0.215,
+    0
+   ],
+   "m": "chrome",
+   "r": [
+    1.5708,
+    0,
+    0
+   ],
+   "name": "lockCollar"
+  }
+ ]
+}

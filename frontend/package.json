@@ -1,0 +1,28 @@
+{
+  "name": "workshift-frontend",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "dev:https": "node scripts/dev-cert.mjs && next dev --experimental-https --experimental-https-key certificates/dev-key.pem --experimental-https-cert certificates/dev-cert.pem",
+    "postinstall": "node -e \"require('fs').cpSync('node_modules/@mediapipe/tasks-vision/wasm','public/mediapipe',{recursive:true})\""
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.2.3",
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.2",
+    "@react-three/postprocessing": "^3.2.2",
+    "next": "^16.4.2",
+    "postprocessing": "^6.39.6",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "^0.187.0",
+    "zod": "^4.6.7",
+    "zustand": "^5.1.0"
+  }
+}

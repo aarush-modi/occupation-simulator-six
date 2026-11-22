@@ -1,0 +1,285 @@
+{
+ "id": "lab_pipette",
+ "name": "Micropipette on stand",
+ "kind": "item",
+ "shells": [
+  "lab"
+ ],
+ "tags": [
+  "pipette",
+  "lab_tech"
+ ],
+ "size": [
+  0.2,
+  0.34,
+  0.12
+ ],
+ "slots": [],
+ "controls": [],
+ "parts": [
+  {
+   "t": "box",
+   "s": [
+    0.1,
+    0.012,
+    0.1
+   ],
+   "p": [
+    -0.04,
+    0.006,
+    0
+   ],
+   "m": "plasticGrey",
+   "round": 0.005,
+   "name": "standBase"
+  },
+  {
+   "t": "box",
+   "s": [
+    0.012,
+    0.26,
+    0.012
+   ],
+   "p": [
+    -0.08,
+    0.14,
+    0
+   ],
+   "m": "plasticGrey",
+   "name": "standPost"
+  },
+  {
+   "t": "box",
+   "s": [
+    0.06,
+    0.012,
+    0.02
+   ],
+   "p": [
+    -0.055,
+    0.25,
+    0
+   ],
+   "m": "plasticGrey",
+   "name": "holderArm"
+  },
+  {
+   "t": "capsule",
+   "rad": 0.014,
+   "len": 0.12,
+   "p": [
+    -0.03,
+    0.2,
+    0
+   ],
+   "m": "plasticWhite",
+   "name": "body"
+  },
+  {
+   "t": "box",
+   "s": [
+    0.03,
+    0.04,
+    0.01
+   ],
+   "p": [
+    -0.03,
+    0.22,
+    0.012
+   ],
+   "m": "plasticGrey",
+   "round": 0.004,
+   "name": "volumeWindow"
+  },
+  {
+   "t": "box",
+   "s": [
+    0.016,
+    0.01,
+    0.002
+   ],
+   "p": [
+    -0.03,
+    0.225,
+    0.018
+   ],
+   "m": "black",
+   "name": "volumeDigits"
+  },
+  {
+   "t": "cyl",
+   "rt": 0.004,
+   "h": 0.04,
+   "p": [
+    -0.03,
+    0.29,
+    0
+   ],
+   "m": "plasticWhite",
+   "name": "plungerRod"
+  },
+  {
+   "t": "cyl",
+   "rt": 0.009,
+   "h": 0.01,
+   "p": [
+    -0.03,
+    0.315,
+    0
+   ],
+   "m": "plasticBlue",
+   "name": "plungerButton"
+  },
+  {
+   "t": "box",
+   "s": [
+    0.012,
+    0.03,
+    0.006
+   ],
+   "p": [
+    -0.012,
+    0.27,
+    0
+   ],
+   "m": "plasticGrey",
+   "name": "ejector"
+  },
+  {
+   "t": "cyl",
+   "rt": 0.007,
+   "h": 0.05,
+   "p": [
+    -0.03,
+    0.11,
+    0
+   ],
+   "m": "plasticGrey",
+   "rb": 0.004,
+   "name": "tipCone"
+  },
+  {
+   "t": "cone",
+   "rad": 0.004,
+   "h": 0.06,
+   "p": [
+    -0.03,
+    0.06,
+    0
+   ],
+   "m": "glassClear",
+   "r": [
+    3.1416,
+    0,
+    0
+   ],
+   "name": "tip"
+  },
+  {
+   "t": "box",
+   "s": [
+    0.09,
+    0.05,
+    0.08
+   ],
+   "p": [
+    0.05,
+    0.025,
+    0
+   ],
+   "m": "plasticBlue",
+   "round": 0.004,
+   "name": "tipBox"
+  },
+  {
+   "t": "box",
+   "s": [
+    0.09,
+    0.01,
+    0.08
+   ],
+   "p": [
+    0.05,
+    0.055,
+    0
+   ],
+   "m": "glassClear",
+   "name": "tipLid"
+  },
+  {
+   "t": "repeat",
+   "n": 5,
+   "step": [
+    0.016,
+    0,
+    0
+   ],
+   "p": [
+    0.018,
+    0.052,
+    -0.02
+   ],
+   "part": {
+    "t": "cyl",
+    "rt": 0.003,
+    "h": 0.004,
+    "p": [
+     0,
+     0,
+     0
+    ],
+    "m": "plasticYellow"
+   }
+  },
+  {
+   "t": "repeat",
+   "n": 5,
+   "step": [
+    0.016,
+    0,
+    0
+   ],
+   "p": [
+    0.018,
+    0.052,
+    0
+   ],
+   "part": {
+    "t": "cyl",
+    "rt": 0.003,
+    "h": 0.004,
+    "p": [
+     0,
+     0,
+     0
+    ],
+    "m": "plasticYellow"
+   }
+  },
+  {
+   "t": "repeat",
+   "n": 5,
+   "step": [
+    0.016,
+    0,
+    0
+   ],
+   "p": [
+    0.018,
+    0.052,
+    0.02
+   ],
+   "part": {
+    "t": "cyl",
+    "rt": 0.003,
+    "h": 0.004,
+    "p": [
+     0,
+     0,
+     0
+    ],
+    "m": "plasticYellow"
+   }
+  }
+ ]
+}

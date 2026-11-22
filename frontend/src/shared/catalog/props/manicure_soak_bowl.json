@@ -1,0 +1,171 @@
+{
+ "shells": [
+  "salon"
+ ],
+ "slots": [],
+ "controls": [],
+ "kind": "item",
+ "id": "manicure_soak_bowl",
+ "name": "Manicure soak bowl",
+ "tags": [
+  "soak_bowl",
+  "bowl",
+  "nail_tech"
+ ],
+ "size": [
+  0.22,
+  0.08,
+  0.2
+ ],
+ "parts": [
+  {
+   "t": "lathe",
+   "pts": [
+    [
+     0,
+     0
+    ],
+    [
+     0.07,
+     0
+    ],
+    [
+     0.08,
+     0.01
+    ],
+    [
+     0.1,
+     0.06
+    ],
+    [
+     0.104,
+     0.07
+    ],
+    [
+     0.098,
+     0.07
+    ]
+   ],
+   "p": [
+    0,
+    0,
+    0
+   ],
+   "m": "plasticWhite",
+   "seg": 32,
+   "name": "bowl"
+  },
+  {
+   "t": "cyl",
+   "rt": 0.094,
+   "h": 0.004,
+   "p": [
+    0,
+    0.055,
+    0
+   ],
+   "m": "liquidBlue",
+   "name": "water"
+  },
+  {
+   "t": "repeat",
+   "n": 4,
+   "step": [
+    0.025,
+    0,
+    0.01
+   ],
+   "part": {
+    "t": "sph",
+    "rad": 0.01,
+    "p": [
+     0,
+     0,
+     0
+    ],
+    "m": "flowerPink",
+    "sy": 0.4
+   },
+   "p": [
+    -0.04,
+    0.058,
+    -0.02
+   ]
+  },
+  {
+   "t": "capsule",
+   "rad": 0.016,
+   "len": 0.04,
+   "p": [
+    0,
+    0.03,
+    0.07
+   ],
+   "m": "plasticWhite",
+   "r": [
+    0,
+    0,
+    1.5708
+   ],
+   "name": "fingerRest"
+  },
+  {
+   "t": "sph",
+   "rad": 0.012,
+   "p": [
+    0.03,
+    0.06,
+    -0.03
+   ],
+   "m": "flowerWhite",
+   "sy": 0.4,
+   "name": "foam"
+  },
+  {
+   "t": "torus",
+   "R": 0.101,
+   "tube": 0.004,
+   "p": [
+    0,
+    0.07,
+    0
+   ],
+   "m": "plasticWhite",
+   "r": [
+    1.5708,
+    0,
+    0
+   ],
+   "name": "rim"
+  },
+  {
+   "t": "torus",
+   "R": 0.07,
+   "tube": 0.004,
+   "p": [
+    0,
+    0.003,
+    0
+   ],
+   "m": "plasticWhite",
+   "r": [
+    1.5708,
+    0,
+    0
+   ],
+   "name": "foot"
+  },
+  {
+   "t": "sph",
+   "rad": 0.008,
+   "p": [
+    0.05,
+    0.058,
+    0.03
+   ],
+   "m": "flowerPink",
+   "sy": 0.4,
+   "name": "petal"
+  }
+ ]
+}

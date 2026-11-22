@@ -1,0 +1,10 @@
+{
+  "name": "workshift",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend:https": "npm --prefix frontend run dev:https",
+    "dev:backend:https": "npm --prefix backend run dev:https"
+  }
+}

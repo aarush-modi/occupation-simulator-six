@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+.vercel/
+.env*
+!.env.example
+logs/
+frontend/public/mediapipe/
+frontend/certificates/
+dev.log

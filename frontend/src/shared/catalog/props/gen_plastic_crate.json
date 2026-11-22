@@ -1,0 +1,236 @@
+{
+ "slots": [],
+ "controls": [],
+ "id": "gen_plastic_crate",
+ "name": "Plastic tote crate",
+ "kind": "item",
+ "shells": [
+  "cafe",
+  "warehouse",
+  "shop",
+  "clinic",
+  "lab",
+  "workshop",
+  "office",
+  "salon"
+ ],
+ "tags": [
+  "crate",
+  "tote",
+  "container",
+  "box"
+ ],
+ "size": [
+  0.55,
+  0.29,
+  0.39
+ ],
+ "parts": [
+  {
+   "t": "box",
+   "name": "body",
+   "s": [
+    0.52,
+    0.25,
+    0.36
+   ],
+   "p": [
+    0,
+    0.135,
+    0
+   ],
+   "m": "plasticBlue",
+   "round": 0.015
+  },
+  {
+   "t": "box",
+   "name": "skirt",
+   "s": [
+    0.5,
+    0.012,
+    0.34
+   ],
+   "p": [
+    0,
+    0.006,
+    0
+   ],
+   "m": "plasticBlue",
+   "round": 0.004
+  },
+  {
+   "t": "box",
+   "name": "rim",
+   "s": [
+    0.55,
+    0.025,
+    0.39
+   ],
+   "p": [
+    0,
+    0.2725,
+    0
+   ],
+   "m": "plasticBlue",
+   "round": 0.008
+  },
+  {
+   "t": "box",
+   "name": "opening",
+   "s": [
+    0.48,
+    0.002,
+    0.32
+   ],
+   "p": [
+    0,
+    0.286,
+    0
+   ],
+   "m": "plasticBlack"
+  },
+  {
+   "t": "repeat",
+   "n": 8,
+   "step": [
+    0.06,
+    0,
+    0
+   ],
+   "p": [
+    -0.21,
+    0.13,
+    0.182
+   ],
+   "part": {
+    "t": "box",
+    "s": [
+     0.014,
+     0.2,
+     0.008
+    ],
+    "m": "plasticBlue",
+    "round": 0.003
+   }
+  },
+  {
+   "t": "repeat",
+   "n": 8,
+   "step": [
+    0.06,
+    0,
+    0
+   ],
+   "p": [
+    -0.21,
+    0.13,
+    -0.182
+   ],
+   "part": {
+    "t": "box",
+    "s": [
+     0.014,
+     0.2,
+     0.008
+    ],
+    "m": "plasticBlue",
+    "round": 0.003
+   }
+  },
+  {
+   "t": "repeat",
+   "n": 4,
+   "step": [
+    0,
+    0,
+    0.08
+   ],
+   "p": [
+    0.262,
+    0.11,
+    -0.12
+   ],
+   "part": {
+    "t": "box",
+    "s": [
+     0.008,
+     0.16,
+     0.014
+    ],
+    "m": "plasticBlue",
+    "round": 0.003
+   }
+  },
+  {
+   "t": "repeat",
+   "n": 4,
+   "step": [
+    0,
+    0,
+    0.08
+   ],
+   "p": [
+    -0.262,
+    0.11,
+    -0.12
+   ],
+   "part": {
+    "t": "box",
+    "s": [
+     0.008,
+     0.16,
+     0.014
+    ],
+    "m": "plasticBlue",
+    "round": 0.003
+   }
+  },
+  {
+   "t": "box",
+   "name": "handleL",
+   "s": [
+    0.006,
+    0.035,
+    0.12
+   ],
+   "p": [
+    -0.2635,
+    0.225,
+    0
+   ],
+   "m": "plasticBlack",
+   "round": 0.002
+  },
+  {
+   "t": "box",
+   "name": "handleR",
+   "s": [
+    0.006,
+    0.035,
+    0.12
+   ],
+   "p": [
+    0.2635,
+    0.225,
+    0
+   ],
+   "m": "plasticBlack",
+   "round": 0.002
+  },
+  {
+   "t": "box",
+   "name": "labelHolder",
+   "s": [
+    0.12,
+    0.06,
+    0.004
+   ],
+   "p": [
+    0,
+    0.22,
+    0.187
+   ],
+   "m": "paper"
+  }
+ ]
+}
