@@ -274,3 +274,15 @@ test('pose: with only the upper body in frame (jittery guessed legs), raising a 
   assert.deepEqual(got, ['fist']);
   off();
 });
+
+test('pose: a relaxed march in place (1.2 steps/s) keeps walking and stops within about a second', () => {
+  const r = rig();
+  const march = (t) => { const ph = Math.sin((t / 1000) * Math.PI * 1.2); return standing({ kneeL: Math.max(0, ph) * 0.06, kneeR: Math.max(0, -ph) * 0.06 }); };
+  r.step(march, 45); // settle into the rhythm
+  let still = 0;
+  for (let i = 0; i < 90; i++) { r.step(march, 1); if (cam.forward === 0) still++; }
+  assert.equal(still, 0, 'never drops out between knee lifts');
+  r.step(standing(), 33); // 1.1 s
+  assert.equal(cam.forward, 0);
+  r.off();
+});

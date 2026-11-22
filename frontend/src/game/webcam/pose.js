@@ -31,10 +31,14 @@ export const POSE_TUNE = {
   armThresh: 0.1, // left-minus-right wrist swing (torso lengths) that counts as one arm forward
   armMaxUp: 0.1, // wrists above this (torso lengths below the shoulder) are a reach / wave, not a walking swing
   armMaxOut: 0.3, // an arm out to the side is a reach, not a swing
-  stepWindowMs: 1400, // cadence window
-  stepGapMs: 700, // no swing / knee crossing for this long = stopped (forward then reaches 0 ~0.2 s later)
-  fullCadence: 2.2, // swings/s for full speed
-  minSteps: 3, // alternating swings inside the window before moving (one arm / a weight shift does nothing)
+  stepWindowMs: 3000, // steps older than this are forgotten
+  // Stop when no step comes within 1.5x the player's own recent step interval (0.7-1.4 s), so a relaxed march
+  // (about 0.6-0.8 s between knee lifts) keeps walking and standing still ends it within about one step.
+  stepGapMs: 700, stepGapMaxMs: 1400, stepGapScale: 1.5,
+  fullCadence: 2.2, // steps or swings per second for full speed
+  minCadenceSpeed: 0.45, // a slow but steady march still walks at a useful pace
+  minSteps: 3, // alternating arm swings before moving (one arm / a weight shift does nothing)
+  minKneeSteps: 2, // alternating knee lifts before moving (left then right is unmistakable)
   fwdRiseTau: 0.3, fwdFallTau: 0.06, // s
   // torso turn
   yawTau: 0.18, // s, heading smoothing
@@ -160,6 +164,20 @@ export function synthHands(lm, f) {
   return out;
 }
 
+/**
+ * Walking state from step timestamps (knee lifts or arm swings): moving while enough alternating steps arrived
+ * and the latest is recent for this player's own rhythm. cadence = steps per second over the recent intervals.
+ */
+export function pace(list, t, minSteps) {
+  if (list.length < minSteps) return { moving: false, cadence: 0 };
+  const intervals = [];
+  for (let i = Math.max(1, list.length - 4); i < list.length; i++) intervals.push(list[i] - list[i - 1]);
+  const sorted = intervals.toSorted((a, b) => a - b);
+  const typical = sorted[Math.floor(sorted.length / 2)];
+  const gap = clamp(typical * T.stepGapScale, T.stepGapMs, T.stepGapMaxMs);
+  return { moving: t - list[list.length - 1] < gap, cadence: 1000 / Math.max(typical, 1) };
+}
+
 export function createPoseEngine(now = () => performance.now()) {
   const base = { n: 0, torso: 0, sw: 0, hipY: 0, leg: 0, legN: 0, zYaw: 0, hip0: null };
   const last = {}; // gesture cooldowns
@@ -270,16 +288,17 @@ export function createPoseEngine(now = () => performance.now()) {
       }
       while (steps.length && t - steps[0] > T.stepWindowMs) steps.shift();
       while (armSteps.length && t - armSteps[0] > T.stepWindowMs) armSteps.shift();
-      const src = armSteps.length > steps.length ? armSteps : steps;
-      const moving = src.length >= T.minSteps && t - src[src.length - 1] < T.stepGapMs;
-      const cadence = src.length / (T.stepWindowMs / 1000);
-      const fwdTarget = moving ? clamp(cadence / T.fullCadence, 0, 1) : 0;
+      const legPace = pace(steps, t, T.minKneeSteps), armPace = pace(armSteps, t, T.minSteps);
+      const best = legPace.moving || !armPace.moving ? legPace : armPace;
+      const moving = best.moving;
+      const cadence = best.cadence;
+      const fwdTarget = moving ? clamp(cadence / T.fullCadence, T.minCadenceSpeed, 1) : 0;
       cam.forward = damp(cam.forward, fwdTarget, fwdTarget > cam.forward ? T.fwdRiseTau : T.fwdFallTau, dt);
-      if (fwdTarget === 0 && cam.forward < 0.03) cam.forward = 0;
+      if (!moving) cam.forward = 0; // stepping stopped: stop now (the player's velocity still eases out)
       cam.body.running = moving;
       if (moving && !wasMoving) emit('move', t);
       wasMoving = moving;
-      const armWalking = armSteps.length >= T.minSteps && t - armSteps[armSteps.length - 1] < T.stepGapMs;
+      const armWalking = armPace.moving;
       cam.body.cadence = cadence;
 
       // --- torso turn: shoulder yaw vs calibration. The z cue gives the sign; the narrowing shoulder line
