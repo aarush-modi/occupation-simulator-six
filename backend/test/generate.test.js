@@ -17,7 +17,7 @@ function checkStrict(schema) {
   schema.anyOf?.forEach(checkStrict);
 }
 
-test('OpenAI Responses requests a strict blueprint, and optional nulls round-trip into the game schema', async () => {
+test('Gemini Neon gets a strict blueprint schema, and optional nulls round-trip into the game schema', async () => {
   let requests = 0;
   const raw = blueprint();
   delete raw.version;
@@ -30,23 +30,26 @@ test('OpenAI Responses requests a strict blueprint, and optional nulls round-tri
     catalog: CATALOG, apiKey: 'test-key', log: quiet,
     fetcher: async (url, request) => {
       requests++;
-      assert.equal(url, 'https://api.openai.com/v1/responses');
-      assert.equal(request.headers.authorization, 'Bearer test-key');
+      assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
+      assert.equal(request.headers['x-goog-api-key'], 'test-key');
       assert.ok(request.signal);
       const body = JSON.parse(request.body);
+      assert.equal(body.model, 'gemini-4-neon');
       assert.equal(body.store, false);
       assert.match(body.input, /barista/);
-      assert.equal(body.text.format.type, 'json_schema');
-      assert.equal(body.text.format.strict, true);
-      checkStrict(body.text.format.schema);
-      assert.equal(body.text.format.schema.properties.objectives.items.properties.say.anyOf[1].type, 'null');
+      assert.match(body.system_instruction, /scenario director/);
+      assert.equal(body.response_format.mime_type, 'application/json');
+      const schema = body.response_format.schema;
+      checkStrict(schema);
+      assert.equal(schema.properties.objectives.items.properties.say.anyOf[1].type, 'null');
+      assert.ok(!JSON.stringify(schema).includes('"const"'), 'const becomes a one-value enum for Gemini');
       return Response.json({
         status: 'completed',
-        output: [
-          { type: 'reasoning', summary: [] },
-          { type: 'message', content: [{ type: 'output_text', text: JSON.stringify(raw) }] },
+        steps: [
+          { type: 'thought', signature: 'x' },
+          { type: 'model_output', content: [{ type: 'text', text: JSON.stringify(raw) }] },
         ],
-        usage: { input_tokens: 700, output_tokens: 400, output_tokens_details: { reasoning_tokens: 70 }, total_tokens: 1100 },
+        usage: { total_input_tokens: 700, total_output_tokens: 330, total_thought_tokens: 70, total_tokens: 1100 },
       });
     },
   });
@@ -61,11 +64,11 @@ test('OpenAI Responses requests a strict blueprint, and optional nulls round-tri
 test('authentication errors produce a clear message and do not log credentials', async () => {
   const generator = createGenerator({
     catalog: CATALOG, apiKey: 'test-key', log: quiet,
-    fetcher: async () => Response.json({ error: { message: 'Rejected: test-key' } }, { status: 401 }),
+    fetcher: async () => Response.json({ error: { code: 'authentication', message: 'Rejected: test-key' } }, { status: 401 }),
   });
   const result = await generator.generate('barista');
   assert.equal(result.ok, false);
-  assert.equal(result.error, 'OpenAI rejected the API key.');
+  assert.equal(result.error, 'Gemini rejected the API key.');
   assert.ok(!JSON.stringify(result).includes('test-key'));
 });
 

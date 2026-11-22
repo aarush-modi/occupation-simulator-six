@@ -93,14 +93,14 @@ export default function WebcamPanel() {
   return (
     <>
       {calibrating && (
-        <div style={{ position: 'absolute', left: '50%', top: '30%', transform: 'translateX(-50%)', padding: '16px 22px', background: 'rgba(12,12,14,0.85)', borderRadius: 10, color: '#fff', textAlign: 'center', border: '1px solid rgba(255,255,255,0.1)' }}>
+        <div style={{ position: 'absolute', left: '50%', top: '30%', transform: 'translateX(-50%)', padding: '16px 22px', background: 'rgba(12,12,14,0.85)', borderRadius: 0, color: '#fff', textAlign: 'center', border: '1px solid rgba(255,255,255,0.1)' }}>
           <div style={{ fontSize: 12, letterSpacing: 3, color: '#f2b233' }}>CALIBRATING</div>
           {body ? (
             <>
               <div style={{ fontSize: 18, fontWeight: 700, marginTop: 6 }}>Stand still, facing the screen, arms at your sides</div>
               <div style={{ fontSize: 13, color: '#bbb', marginTop: 6 }}>Stand back so your shoulders, arms and hips are in the preview. Legs are optional.</div>
               {cam.calibHint && <div style={{ fontSize: 13, color: '#ff8a7a', marginTop: 6 }}>{cam.calibHint}</div>}
-              <div style={{ height: 4, background: 'rgba(255,255,255,0.12)', borderRadius: 4, marginTop: 10, overflow: 'hidden' }}>
+              <div style={{ height: 4, background: 'rgba(255,255,255,0.12)', borderRadius: 0, marginTop: 10, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${Math.round((cam.calibProgress ?? 0) * 100)}%`, background: '#f2b233' }} />
               </div>
               <div style={{ fontSize: 12, color: '#999', marginTop: 10, lineHeight: 1.6 }}>
@@ -116,10 +116,10 @@ export default function WebcamPanel() {
           )}
         </div>
       )}
-      <div style={{ position: 'absolute', right: 20, bottom: 20, width: 260, padding: 10, background: 'rgba(12,12,14,0.78)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: '#fff', pointerEvents: 'auto', fontSize: 12 }}>
+      <div style={{ position: 'absolute', right: 20, bottom: 20, width: 260, padding: 10, background: 'rgba(34,26,20,0.94)', boxShadow: '0 0 0 2px #120e0b, 0 0 0 4px #4a3a2c, 0 4px 0 4px rgba(18,14,11,0.9)', borderRadius: 0, color: '#fff', pointerEvents: 'auto', fontSize: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 8, background: statusColor }} />
+            <span style={{ width: 8, height: 8, borderRadius: 0, background: statusColor }} />
             Webcam {cam.status === 'off' ? 'off' : cam.status}
           </span>
           <span style={{ display: 'flex', gap: 6 }}>
@@ -134,7 +134,7 @@ export default function WebcamPanel() {
             </button>
           ))}
         </div>
-        <canvas ref={canvas} width={240} height={180} style={{ width: 240, height: 180, borderRadius: 6, background: '#000', display: cam.enabled ? 'block' : 'none' }} />
+        <canvas ref={canvas} width={240} height={180} style={{ width: 240, height: 180, borderRadius: 0, background: '#000', display: cam.enabled ? 'block' : 'none' }} />
         {cam.enabled && (
           <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', color: '#bbb' }}>
             {body ? (
@@ -153,4 +153,4 @@ export default function WebcamPanel() {
   );
 }
 
-const btn = { border: 0, borderRadius: 6, padding: '4px 10px', fontWeight: 700, cursor: 'pointer', fontSize: 12 };
+const btn = { border: 0, borderRadius: 0, padding: '4px 10px', fontWeight: 700, cursor: 'pointer', fontSize: 12 };

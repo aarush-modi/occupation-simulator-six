@@ -42,14 +42,19 @@ const npcRef = z.string();
 
 export const Objective = z.object({
   id: z.string(),
-  verb: z.enum(['grab', 'place', 'press', 'talk']),
-  // grab: item id. place: "<stationId>.<slotId>" or a surface anchor S1..S8. press: "<stationId>.<controlId>". talk: npc id.
+  verb: z.enum(['grab', 'place', 'press', 'use', 'talk']),
+  // grab: item id. place: "<stationId>.<slotId>" or a surface anchor S1..S8. press: "<stationId>.<controlId>".
+  // use: "<stationId>" or "<stationId>.<slotId>" the held item is used on. talk: npc id.
   target: z.string(),
-  item: z.string().optional(), // place: the item being placed
+  item: z.string().optional(), // place: the item being placed. use: the tool or ingredient in hand
+  action: z.string().optional(), // use: the trade verb ("pour", "wipe", "tamp", "scan")
+  motion: z.enum(['tilt', 'scrub', 'strike', 'apply']).optional(), // use: the one gesture that does it
+  sets: z.string().optional(), // use on a slot: tag the item in that slot gains ("latte", "clean")
   label: z.string(),
   skill: z.enum(['none', 'timing', 'steady', 'hold']).default('none'),
   say: z.object({ npc: npcRef, text: z.string() }).optional(), // NPC line when this objective is completed
   tip: z.string().optional(), // real technique or reason for this step, said by the mentor when the step starts
+  real: z.string().optional(), // what this action stands for in the real job and why it matters (shown while doing it)
   role: z.string().optional(), // roles[].id that does this step in multiplayer (solo players do every role)
   after: z.string().optional(), // objective id this step waits for, usually the other role's handoff
 });
@@ -118,13 +123,13 @@ export const Blueprint = z.object({
       ambient: z.array(z.string()).max(3).optional(), // short call-outs while working ("Behind!")
     }),
   })).min(1).max(3),
-  objectives: z.array(Objective).max(16), // two parallel roles need more steps than a solo shift
+  objectives: z.array(Objective).max(20), // two parallel roles (and their craft steps) need more than a solo shift
   event: z.object({
     after: z.string(), // objective id
     delaySec: z.number().min(0).max(20).default(3),
     announce: z.object({ npc: npcRef, text: z.string() }),
     close: z.string().optional(), // station id that becomes unusable
-    replaceRemaining: z.array(Objective).min(1).max(6), // new objectives that replace everything after `after`
+    replaceRemaining: z.array(Objective).min(1).max(10), // new objectives that replace everything after `after`
   }).optional(),
   facts: z.array(z.string()).min(2).max(6),
   mentor: npcRef.optional(), // coworker who coaches each step's tip

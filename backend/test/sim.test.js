@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRoom, applyIntent, tick, STALE_MS } from '../../frontend/src/shared/sim.js';
+import { createRoom, applyIntent, tick, adjustStanding, STALE_MS, STANDING_START, MISTAKE_COST } from '../../frontend/src/shared/sim.js';
+import { checkBlueprint } from '../../frontend/src/shared/validate.js';
 import { CATALOG, blueprint } from './fixtures.js';
 
 const T0 = 1_000_000;
@@ -29,7 +30,7 @@ const denied = (events) => events.find((e) => e.type === 'denied')?.reason ?? nu
 test('state is JSON-serialisable and has the contract shape', () => {
   const r = room();
   const json = JSON.parse(JSON.stringify(r.state));
-  assert.deepEqual(Object.keys(json).sort(), ['closed', 'cur', 'done', 'event', 'items', 'objectives', 'phase', 'players', 'score', 'startedAt'].sort());
+  assert.deepEqual(Object.keys(json).sort(), ['closed', 'cur', 'done', 'event', 'items', 'objectives', 'phase', 'players', 'score', 'standing', 'startedAt'].sort());
   assert.deepEqual(json.items.cup1, { at: 'S1', holder: null, tags: ['cup', 'ceramic'] });
   assert.equal(json.players.a.held, null);
 });
@@ -167,4 +168,82 @@ test('players: max 4, poses are clamped, stale holders are released', () => {
   assert.equal(r.state.items.cup2.holder, null);
   assert.equal(r.state.players.b.held, null);
   assert.equal(r.state.items.cup2.at, 'S2', 'returns to its spawn anchor');
+});
+
+// A pour step: grab the jug, pour it into the seated cup (which becomes a latte), then serve.
+function latteBlueprint() {
+  const bp = blueprint();
+  bp.items.push({ id: 'jug', prop: 'cup', anchor: 'S3', label: 'Milk jug' });
+  bp.objectives = [
+    { id: 'p1', verb: 'grab', target: 'cup1', label: 'Grab a cup', skill: 'none' },
+    { id: 'p2', verb: 'place', target: 'main.cup', item: 'cup1', label: 'Seat the cup', skill: 'none' },
+    { id: 'p3', verb: 'grab', target: 'jug', label: 'Pick up the milk jug', skill: 'none' },
+    { id: 'p4', verb: 'use', target: 'main.cup', item: 'jug', action: 'pour', motion: 'tilt', sets: 'latte', label: 'Pour the milk', skill: 'none' },
+    { id: 'p5', verb: 'press', target: 'shelf.bell', label: 'Ring the bell', skill: 'none' },
+  ];
+  delete bp.event;
+  return bp;
+}
+
+test('use: the current step\'s trade action with the item in hand tags the item in the slot', () => {
+  let state = createRoom(latteBlueprint(), CATALOG, T0);
+  const act = (intent) => { const r = applyIntent(state, 'a', intent, T0); state = r.state; return r.events; };
+  act({ t: 'join', name: 'Ana' });
+  act({ t: 'grab', item: 'cup1' });
+  act({ t: 'place', item: 'cup1', target: 'main.cup' });
+  assert.equal(denied(act({ t: 'use', target: 'main.cup' })), 'not now', 'only once it is the step');
+  act({ t: 'grab', item: 'jug' });
+  assert.equal(denied(act({ t: 'use', target: 'backup.cup' })), 'not now', 'the wrong spot does nothing');
+  const ev = act({ t: 'use', target: 'main.cup' });
+  assert.deepEqual(ev.find(e => e.type === 'used'), { type: 'used', playerId: 'a', item: 'jug', target: 'main.cup', action: 'pour', on: 'cup1', sets: 'latte' });
+  assert.ok(state.items.cup1.tags.includes('latte'));
+  assert.ok(state.done.includes('p4'));
+});
+
+test('use steps are validated and played through by the bot', () => {
+  const withEvent = () => {
+    const bp = latteBlueprint();
+    bp.event = {
+      after: 'p3', delaySec: 2, announce: { npc: 'mgr', text: 'They want it extra milky!' },
+      replaceRemaining: [{ ...bp.objectives[3], id: 'q4' }, { ...bp.objectives[4], id: 'q5' }],
+    };
+    return bp;
+  };
+  const ok = checkBlueprint(withEvent(), CATALOG);
+  assert.deepEqual(ok.errors, []);
+  const bad = withEvent();
+  bad.objectives[3] = { ...bad.objectives[3], target: 'main', motion: undefined };
+  const { errors } = checkBlueprint(bad, CATALOG);
+  assert.ok(errors.some(e => /needs "motion"/.test(e)));
+  assert.ok(errors.some(e => /"sets" must target "station.slot"/.test(e)));
+});
+
+test('fumbles cost standing once per moment, and at zero the player loses the job', () => {
+  const r = room();
+  assert.equal(r.state.standing.value, STANDING_START);
+  r.act('a', { t: 'grab', item: 'cup1' });
+  r.act('a', { t: 'place', item: 'cup1', target: 'shelf.drink' }, T0 + 10); // does not fit: not brewed yet
+  r.act('a', { t: 'place', item: 'cup1', target: 'shelf.drink' }, T0 + 500); // same fumble, same moment
+  assert.equal(r.state.standing.value, STANDING_START - MISTAKE_COST);
+  assert.ok(r.all.some(e => e.type === 'standing' && e.reason === 'Fumbled a task'));
+  const lost = adjustStanding(r.state, -200, 'Rude to a customer', T0 + 1000, 'a');
+  assert.equal(lost.state.phase, 'review');
+  assert.deepEqual(lost.state.standing.failed, { reason: 'Rude to a customer', at: T0 + 1000 });
+  assert.ok(lost.events.some(e => e.type === 'fired' && e.reason === 'Rude to a customer'));
+  assert.equal(r.state.phase, 'play', 'adjustStanding is pure');
+});
+
+test('a customer kept waiting past their patience slowly costs standing', () => {
+  const bp = blueprint();
+  bp.order = { npc: 'mgr', text: 'One espresso', patienceSec: 60, waiting: 'Still waiting!' };
+  let state = createRoom(bp, CATALOG, T0);
+  state = applyIntent(state, 'a', { t: 'join', name: 'Ana' }, T0).state;
+  const at = (ms) => { state.players.a.lastSeen = T0 + ms; state = tick(state, T0 + ms).state; };
+  at(59_000);
+  assert.equal(state.standing.value, STANDING_START);
+  at(61_000);
+  at(62_000);
+  assert.equal(state.standing.value, STANDING_START - 2, 'charged once per 5 s');
+  at(71_000);
+  assert.equal(state.standing.value, STANDING_START - 6);
 });

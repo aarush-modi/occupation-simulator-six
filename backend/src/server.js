@@ -7,11 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { CATALOG } from './catalog.js';
 import { loadDemos } from './demos.js';
 import { createGenerator } from './generate.js';
+import { createRequestScreen } from './safety.js';
 import { createApp, lanAddress } from './app.js';
 
 const port = Number(process.env.PORT ?? 3001);
 const demos = loadDemos(CATALOG);
-const generator = createGenerator({ catalog: CATALOG });
+const generator = createGenerator({ catalog: CATALOG, screen: createRequestScreen({ apiKey: process.env.GEMINI_API_KEY, model: process.env.GEMINI_NPC_MODEL || undefined }) });
 const certDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../frontend/certificates');
 function devTls() {
   const key = path.join(certDir, 'dev-key.pem'), cert = path.join(certDir, 'dev-cert.pem');
@@ -25,5 +26,5 @@ const { server, secure } = createApp({ catalog: CATALOG, demos, generator, tls }
 
 server.listen(port, '0.0.0.0', () => {
   console.log(`Workshift backend listening on ${secure ? 'https' : 'http'}://${lanAddress()}:${server.address().port}${secure ? ' (WebSockets: wss)' : ''}`);
-  console.log(`catalog ${CATALOG.length} recipes, demos [${demos.map((d) => d.id).join(', ')}], model ${generator.model}${process.env.OPENAI_API_KEY ? '' : ' (OPENAI_API_KEY missing)'}`);
+  console.log(`catalog ${CATALOG.length} recipes, demos [${demos.map((d) => d.id).join(', ')}], model ${generator.model}${process.env.GEMINI_API_KEY ? '' : ' (GEMINI_API_KEY missing)'}`);
 });

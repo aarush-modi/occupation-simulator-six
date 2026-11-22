@@ -154,6 +154,15 @@ export function checkBlueprint(input, catalog) {
         else if (!ctrl) errors.push(`${who}: ${stId} has no control ${sub} (its controls: ${listIds(stations.get(stId).controls)})`);
         break;
       }
+      case 'use':
+        if (!o.item) errors.push(`${who}: use needs "item" (the tool or ingredient in hand)`);
+        else if (!items.has(o.item)) errors.push(`${who}: item ${o.item} is not an item`);
+        if (!o.action) errors.push(`${who}: use needs "action" (the trade verb)`);
+        if (!o.motion) errors.push(`${who}: use needs "motion" (tilt, scrub, strike or apply)`);
+        if (!stations.has(stId)) errors.push(`${who}: use target ${o.target} must be "station" or "station.slot"`);
+        else if (sub !== undefined && !slotOf(o.target)) errors.push(`${who}: ${stId} has no slot ${sub} (its slots: ${listIds(stations.get(stId).slots)})`);
+        if (o.sets && sub === undefined) errors.push(`${who}: use with "sets" must target "station.slot" (the item there gains the tag)`);
+        break;
       case 'talk':
         if (!npcs.has(o.target)) errors.push(`${who}: talk target ${o.target} is not an npc`);
         break;
@@ -180,6 +189,9 @@ export function checkBlueprint(input, catalog) {
         const first = ctrl.requires?.[0];
         const holder = first && [...loc].find(([, at]) => at === `${stId}.${first}`)?.[0];
         if (ctrl.sets && holder) tags.get(holder).add(ctrl.sets);
+      } else if (o.verb === 'use' && o.sets) {
+        const holder = [...loc].find(([, at]) => at === o.target)?.[0];
+        if (holder) tags.get(holder).add(o.sets);
       }
     }
   };
@@ -201,17 +213,26 @@ export function checkBlueprint(input, catalog) {
  * otherwise a reason string. The bot frees its hands on a spare surface when the next step needs a different item.
  */
 export function playthrough(bp, catalog, withEvent) {
-  let now = 1_000_000;
+  const now = 1_000_000;
   let state = createRoom(bp, catalog, now);
-  const me = 'bot';
+  state = applyIntent(state, 'bot', { t: 'join', name: 'Validator' }, now).state;
+  const targeted = [...bp.objectives, ...(bp.event?.replaceRemaining ?? [])].map((o) => o.target);
+  return driveBot(state, 'bot', { withEvent, now, targeted });
+}
+
+/**
+ * Play `state` to the end as player `me` using only legal intents (from any point in a shift, e.g. to check a plan
+ * changed mid-shift). Returns null when it reaches review, otherwise a reason string. The bot frees its hands on a
+ * spare surface when the next step needs a different item.
+ */
+export function driveBot(state, me, { withEvent = true, now = Date.now(), targeted = [] } = {}) {
   const step = (intent) => {
     const r = applyIntent(state, me, intent, now);
     state = r.state;
     return r.events.find((e) => e.type === 'denied')?.reason ?? null;
   };
-  step({ t: 'join', name: 'Validator' });
-  const targeted = new Set([...bp.objectives, ...(bp.event?.replaceRemaining ?? [])].map((o) => o.target));
-  const spare = [...SURFACES.filter((s) => !targeted.has(s)), ...SURFACES.filter((s) => targeted.has(s))];
+  const avoid = new Set([...targeted, ...state.objectives.map((o) => o.target)]);
+  const spare = [...SURFACES.filter((s) => !avoid.has(s)), ...SURFACES.filter((s) => avoid.has(s))];
   const freeSurface = () => spare.find((s) => !Object.values(state.items).some((it) => it.at === s && !it.holder));
   const holdOnly = (item) => {
     const held = state.players[me].held;
@@ -227,7 +248,7 @@ export function playthrough(bp, catalog, withEvent) {
   };
 
   for (let guard = 0; guard < 64; guard++) {
-    if (state.phase === 'review') return null;
+    if (state.phase === 'review') return state.standing?.failed ? `the job was lost: ${state.standing.failed.reason}` : null;
     // Let the event director run between steps.
     now += 250;
     if (withEvent && state.event.at !== null && !state.event.fired) {
@@ -235,17 +256,19 @@ export function playthrough(bp, catalog, withEvent) {
       state = tick(state, now).state;
       continue;
     }
-    const o = state.objectives[state.cur];
+    const index = state.players[me]?.step ?? state.cur;
+    const o = state.objectives[index];
     if (!o) return state.phase === 'review' ? null : 'all objectives done but the shift did not end';
-    const before = state.cur;
+    const before = state.done.length;
     const beforeLen = state.objectives.length;
     let why = null;
     if (o.verb === 'grab') why = holdOnly(o.target);
     else if (o.verb === 'place') why = holdOnly(o.item) ?? step({ t: 'place', item: o.item, target: o.target });
     else if (o.verb === 'press') why = step({ t: 'press', target: o.target });
+    else if (o.verb === 'use') why = holdOnly(o.item) ?? step({ t: 'use', target: o.target });
     else if (o.verb === 'talk') why = step({ t: 'talk', npc: o.target });
     if (why) return `objective ${o.id} ("${o.label}"): ${why}`;
-    if (state.cur === before && state.objectives.length === beforeLen && state.phase === 'play') {
+    if (state.done.length === before && state.objectives.length === beforeLen && state.phase === 'play') {
       return `objective ${o.id} ("${o.label}") did not complete`;
     }
   }

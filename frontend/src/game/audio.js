@@ -106,3 +106,38 @@ export function footstep() {
   src.connect(f).connect(g).connect(master); src.start();
   blip(180 + Math.random() * 40, 0.04, 0.05, 'triangle');
 }
+
+/**
+ * Play an NPC voice clip (WAV bytes) through the game's audio graph, falling back to an <audio> element before the
+ * graph exists. Stops itself after `maxMs`. Returns { stop } and calls onEnd exactly once.
+ */
+export async function playVoice(bytes, { maxMs = 20000, onEnd = () => {} } = {}) {
+  let ended = false, timer = null, stopNow = () => {};
+  const end = () => { if (ended) return; ended = true; clearTimeout(timer); onEnd(); };
+  try {
+    if (ctx && ctx.state !== 'closed') {
+      if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+      const buffer = await ctx.decodeAudioData(bytes.slice(0));
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const g = ctx.createGain(); g.gain.value = 1.5; // master is 0.55 for ambience; voices sit on top
+      src.connect(g).connect(master);
+      src.onended = end;
+      src.start();
+      stopNow = () => { try { src.stop(); } catch {} end(); };
+    } else {
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+      const el = new Audio(url);
+      el.onended = () => { URL.revokeObjectURL(url); end(); };
+      el.onerror = el.onended;
+      await el.play();
+      stopNow = () => { el.pause(); URL.revokeObjectURL(url); end(); };
+    }
+    timer = setTimeout(stopNow, maxMs);
+  } catch (err) {
+    clearTimeout(timer);
+    ended = true; // never started: the caller falls back to another voice and owns onEnd
+    throw err;
+  }
+  return { stop: stopNow };
+}

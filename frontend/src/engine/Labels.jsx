@@ -44,17 +44,16 @@ export function LabelProjector() {
   return null;
 }
 
-const font = "'Inter','Segoe UI',system-ui,sans-serif";
 
 function Label({ l }) {
   if (l.variant === 'closed') {
-    return <div style={{ background: '#c9150b', color: '#fff', fontWeight: 900, letterSpacing: 3, fontSize: 14, padding: '4px 12px', borderRadius: 4, boxShadow: '0 2px 10px rgba(0,0,0,0.45)' }}>CLOSED</div>;
+    return <div style={{ background: '#c9150b', color: '#fff', fontWeight: 900, letterSpacing: 3, fontSize: 14, padding: '4px 12px', borderRadius: 0, boxShadow: '0 2px 10px rgba(0,0,0,0.45)' }}>CLOSED</div>;
   }
   const sign = l.variant === 'sign';
   return (
-    <div style={{ textAlign: 'center', padding: sign ? '3px 9px' : '4px 11px', borderRadius: 999, background: sign ? 'rgba(12,12,14,0.55)' : 'rgba(12,12,14,0.74)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', lineHeight: 1.2 }}>
+    <div style={{ textAlign: 'center', padding: sign ? '3px 9px' : '4px 11px', borderRadius: 0, background: sign ? 'rgba(12,12,14,0.55)' : 'rgba(12,12,14,0.74)', boxShadow: '0 0 0 2px rgba(18,14,11,0.8), 0 3px 0 2px rgba(18,14,11,0.6)', color: '#fff', lineHeight: 1.2 }}>
       <div style={{ fontSize: sign ? 12 : 14, fontWeight: sign ? 600 : 700, color: sign ? '#dfe7ee' : '#fff' }}>
-        <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 7, background: l.color ?? '#f2b233', marginRight: 6, verticalAlign: 1 }} />{l.title}
+        <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 0, background: l.color ?? '#f2b233', marginRight: 6, verticalAlign: 1 }} />{l.title}
       </div>
       {l.sub && <div style={{ fontSize: 11, color: '#b9b4ad' }}>{l.sub}</div>}
     </div>
@@ -65,7 +64,7 @@ export function LabelLayer() {
   const [, force] = useState(0);
   useEffect(() => { const cb = () => force((x) => x + 1); subs.add(cb); return () => subs.delete(cb); }, []);
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden', fontFamily: font, zIndex: 5 }}>
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden', fontFamily: "var(--font-pixel), ui-monospace, monospace", fontSizeAdjust: 0.56, zIndex: 5 }}>
       {[...labels.entries()].map(([id, l]) => (
         <div key={id} ref={(el) => { l.el = el; }} style={{ position: 'absolute', left: 0, top: 0, display: 'none', whiteSpace: 'nowrap', transformOrigin: '50% 100%', willChange: 'transform' }}>
           <Label l={l} />

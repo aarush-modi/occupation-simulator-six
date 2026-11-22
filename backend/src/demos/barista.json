@@ -92,7 +92,7 @@
       "anchor": "P3",
       "outfit": "apron",
       "lines": {
-        "intro": "Morning! Grind the beans, pull a shot and get it to the pickup counter.",
+        "intro": "Morning! Grind the beans, pull a shot, mark it with milk and get it to the pickup counter.",
         "done": "Smooth service. You're a natural!",
         "ambient": [
           "Behind!",
@@ -108,7 +108,7 @@
       "anchor": "P1",
       "outfit": "casual",
       "lines": {
-        "intro": "One espresso, please. I'm running late!",
+        "intro": "One macchiato, please. I'm running late!",
         "done": "Perfect, thanks!"
       }
     }
@@ -245,6 +245,31 @@
       "role": "bar"
     },
     {
+      "id": "grab_jug",
+      "verb": "grab",
+      "target": "milk",
+      "label": "Grab the steamed milk",
+      "skill": "none",
+      "role": "bar",
+      "after": "steam_milk",
+      "tip": "Swirl the jug so the foam and milk stay together.",
+      "real": "Baristas finish milk drinks right away, before the foam separates."
+    },
+    {
+      "id": "pour",
+      "verb": "use",
+      "target": "espresso.cup",
+      "item": "milk",
+      "action": "pour",
+      "motion": "tilt",
+      "sets": "macchiato",
+      "label": "Mark the shot with milk",
+      "skill": "none",
+      "role": "bar",
+      "tip": "Just a spoonful of foam on top. That is what makes it a macchiato.",
+      "real": "Pouring is the craft customers see: the right amount of milk is the whole drink."
+    },
+    {
       "id": "take_cup",
       "verb": "grab",
       "target": "cup",
@@ -320,6 +345,31 @@
         "role": "bar"
       },
       {
+        "id": "grab_jug_spare",
+        "verb": "grab",
+        "target": "milk",
+        "label": "Grab the steamed milk",
+        "skill": "none",
+        "role": "bar",
+        "after": "steam_milk",
+        "tip": "Swirl the jug so the foam and milk stay together.",
+        "real": "Baristas finish milk drinks right away, before the foam separates."
+      },
+      {
+        "id": "pour_spare",
+        "verb": "use",
+        "target": "backup.cup",
+        "item": "milk",
+        "action": "pour",
+        "motion": "tilt",
+        "sets": "macchiato",
+        "label": "Mark the shot with milk",
+        "skill": "none",
+        "role": "bar",
+        "tip": "Just a spoonful of foam on top. That is what makes it a macchiato.",
+        "real": "Pouring is the craft customers see: the right amount of milk is the whole drink."
+      },
+      {
         "id": "take_spare",
         "verb": "grab",
         "target": "cup2",
@@ -363,9 +413,9 @@
   "mentor": "maya",
   "order": {
     "npc": "leo",
-    "text": "One espresso, to go",
+    "text": "One macchiato, to go",
     "patienceSec": 150,
-    "waiting": "Is my espresso nearly ready? I have a train."
+    "waiting": "Is my macchiato nearly ready? I have a train."
   },
   "career": {
     "dayInLife": "Open before sunrise: dial in the grinder, prep milk and pastries, then serve a steady line. Between rushes you clean, restock and chat with regulars. Close with a deep clean of the machines.",

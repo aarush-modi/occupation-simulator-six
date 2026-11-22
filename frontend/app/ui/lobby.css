@@ -1,0 +1,118 @@
+/* Lobby screens (prompt and loading). Pixel type, chunky stepped edges and snappy stepped motion, in Workshift's
+   own warm palette. Scoped under .ws-screen so the 3D shift's HUD is untouched. */
+:root {
+  --ws-ink: #120e0b;
+  --ws-ink-2: #1b1511;
+  --ws-panel: #221a14;
+  --ws-edge: #4a3a2c;
+  --ws-text: #f5e6c8;
+  --ws-dim: #b9a68a;
+  --ws-accent: #f2b233;
+  --ws-accent-ink: #1a1206;
+  --ws-error: #ff9a85;
+  --ws-snap: cubic-bezier(.34, 1.56, .64, 1);
+  /* Pixel border: dark gap, coloured edge, and a 4 px drop that reads as depth. */
+  --ws-pixel: 0 0 0 2px var(--ws-ink), 0 0 0 4px var(--ws-edge), 0 4px 0 4px var(--ws-ink);
+  --ws-pixel-hot: 0 0 0 2px var(--ws-ink), 0 0 0 4px var(--ws-accent), 0 4px 0 4px #3a2606, 0 0 28px 4px rgba(242, 178, 51, .22);
+}
+
+.ws-screen {
+  position: fixed; inset: 0; overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 110%, #2a1c12 0%, var(--ws-ink-2) 45%, var(--ws-ink) 100%);
+  color: var(--ws-text);
+  font-family: var(--font-pixel), ui-monospace, monospace;
+  font-size: 22px; line-height: 1.25;
+  -webkit-font-smoothing: none;
+}
+.ws-screen *, .ws-screen *::before, .ws-screen *::after { box-sizing: border-box; }
+
+/* Backdrop */
+.ws-sky { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; }
+.ws-crt {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, .18) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, .55) 100%);
+}
+
+/* Centred column, chat-like */
+.ws-stage {
+  position: relative; z-index: 1; height: 100%;
+  display: grid; place-items: center; padding: 24px 16px;
+  pointer-events: none; /* the backdrop stays draggable around the content */
+}
+.ws-column { position: relative; width: min(680px, 100%); display: grid; gap: 22px; pointer-events: auto; }
+/* A pool of quiet behind the conversation so the busy field never competes with it. */
+.ws-column::before {
+  content: ''; position: absolute; inset: -120px -160px; z-index: -1; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(18, 14, 11, .92), rgba(18, 14, 11, .6) 55%, transparent);
+}
+
+/* Composer */
+.ws-composer-wrap { display: grid; gap: 10px; animation: ws-rise .35s var(--ws-snap) both; }
+.ws-composer {
+  display: flex; align-items: flex-end; gap: 12px;
+  padding: 14px 14px 14px 18px; margin: 4px;
+  background: var(--ws-panel);
+  box-shadow: var(--ws-pixel);
+  transition: box-shadow .12s steps(2, end), transform .12s steps(2, end);
+}
+.ws-composer:focus-within { box-shadow: var(--ws-pixel-hot); }
+.ws-composer[data-busy] { transform: translateY(2px); }
+.ws-composer-caret { color: var(--ws-accent); font-size: 30px; line-height: 40px; animation: ws-blink 1.1s steps(2, start) infinite; }
+.ws-composer-input {
+  flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent;
+  color: var(--ws-text); font: inherit; font-size: 30px; line-height: 40px; padding: 0;
+  min-height: 40px; max-height: 200px; caret-color: var(--ws-accent);
+}
+.ws-composer-input::placeholder { color: #8f7d66; }
+.ws-composer-input[readonly] { color: var(--ws-dim); }
+
+.ws-send, .ws-action {
+  flex: none; border: 0; cursor: pointer; font: inherit;
+  color: var(--ws-accent-ink); background: var(--ws-accent);
+  box-shadow: 0 0 0 2px var(--ws-ink), 0 4px 0 2px #8a5c10;
+  transition: transform .1s steps(2, end), box-shadow .1s steps(2, end), filter .1s steps(2, end);
+}
+.ws-send { width: 44px; height: 40px; display: grid; place-items: center; }
+.ws-send:hover:not([data-disabled]), .ws-action:hover { filter: brightness(1.12); transform: translateY(-1px); }
+.ws-send:active:not([data-disabled]), .ws-action:active { transform: translateY(3px); box-shadow: 0 0 0 2px var(--ws-ink), 0 1px 0 2px #8a5c10; }
+.ws-send[data-disabled] { background: #3b2f25; color: #6f604f; box-shadow: 0 0 0 2px var(--ws-ink), 0 4px 0 2px #2a2119; cursor: default; }
+.ws-send[data-pending] svg { animation: ws-nudge .5s steps(2, end) infinite; }
+.ws-send:focus-visible, .ws-action:focus-visible { outline: 2px solid var(--ws-text); outline-offset: 5px; }
+.ws-composer-error { margin: 0 6px; color: var(--ws-error); font-size: 20px; }
+
+/* Chat transcript (loading page) */
+.ws-thread { display: grid; gap: 18px; }
+.ws-msg { display: flex; gap: 14px; align-items: flex-start; animation: ws-rise .3s var(--ws-snap) both; }
+.ws-msg-you { justify-content: flex-end; }
+.ws-bubble { max-width: 85%; padding: 12px 16px; margin: 4px; box-shadow: var(--ws-pixel); background: var(--ws-panel); }
+.ws-msg-you .ws-bubble { background: var(--ws-accent); color: var(--ws-accent-ink); box-shadow: 0 0 0 2px var(--ws-ink), 0 4px 0 2px #8a5c10; font-size: 26px; }
+.ws-avatar { flex: none; width: 40px; height: 40px; margin-top: 4px; image-rendering: pixelated; }
+.ws-reply { display: grid; gap: 10px; min-width: 0; padding-top: 6px; }
+.ws-reply-title { font-size: 26px; }
+.ws-reply-note { color: var(--ws-dim); font-size: 20px; }
+.ws-reply-note a { color: var(--ws-accent); text-decoration: underline; }
+.ws-eyebrow { color: var(--ws-accent); font-size: 16px; letter-spacing: .2em; text-transform: uppercase; }
+.ws-dots::after { content: ''; animation: ws-dots 1.2s steps(4, end) infinite; }
+.ws-meter { display: grid; grid-template-columns: repeat(20, 1fr); gap: 4px; height: 14px; max-width: 420px; }
+.ws-meter i { background: #3b2f25; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .35); }
+.ws-meter i[data-on] { background: var(--ws-accent); box-shadow: inset 0 -2px 0 #8a5c10, 0 0 8px rgba(242, 178, 51, .35); }
+.ws-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px; }
+.ws-action { padding: 6px 16px; font-size: 22px; text-transform: uppercase; letter-spacing: .08em; }
+.ws-action[data-quiet] { background: var(--ws-panel); color: var(--ws-text); box-shadow: var(--ws-pixel); }
+.ws-action[data-pending] { opacity: .7; cursor: wait; }
+
+@keyframes ws-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes ws-blink { to { visibility: hidden; } }
+@keyframes ws-nudge { 50% { transform: translateX(3px); } }
+@keyframes ws-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+
+@media (max-width: 520px) {
+  .ws-composer-input { font-size: 24px; line-height: 34px; min-height: 34px; }
+  .ws-composer-caret { font-size: 24px; line-height: 34px; }
+  .ws-send { height: 34px; width: 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-screen *, .ws-screen *::before, .ws-screen *::after { animation: none !important; transition: none !important; }
+}

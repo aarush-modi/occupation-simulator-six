@@ -1,9 +1,11 @@
 import { ANCHORS, ROOM, SUPPLY_COUNTERS } from '../../frontend/src/shared/layout.js';
+import { geminiText, MODELS } from './geminiClient.js';
 
 const actions = ['prepare', 'stock', 'inspect', 'serve'];
 const verbs = { prepare: 'Preparing the station', stock: 'Restocking', inspect: 'Checking equipment', serve: 'Working the service counter' };
 const spacing = 0.45;
 const CALLOUT_GAP_MS = 20000; // at most one coworker call-out ("Behind!") this often across the room
+const REPLAN_GAP_MS = 6000; // coworkers are re-directed when the players' steps change, at most this often
 const countX = Math.floor((ROOM.W - 0.8) / spacing);
 const countZ = Math.floor((ROOM.D - 0.8) / spacing);
 const distance = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
@@ -71,37 +73,34 @@ export function playerStations(state) {
   return reserved;
 }
 
-const DEFAULT_NPC_MODEL = 'gpt-5-mini';
+const planSchema = {
+  type: 'object', additionalProperties: false, required: ['cast'],
+  properties: { cast: { type: 'array', items: {
+    type: 'object', additionalProperties: false, required: ['npc', 'station', 'action', 'activity', 'line'],
+    properties: {
+      npc: { type: 'string' }, station: { type: 'string' },
+      action: { type: 'string', enum: actions }, activity: { type: 'string' }, line: { type: 'string' },
+    },
+  } } },
+};
 
-export function createNpcPlanner({ apiKey, model = DEFAULT_NPC_MODEL, fetcher = fetch } = {}) {
+const planInstructions = [
+  'Direct the coworker NPCs in a 3D job simulator so the workplace feels like the real job happening around the player.',
+  'For each given NPC choose a listed station and one of the work animations, and write `activity`: what that NPC is visibly doing right now in the real trade terms of this occupation, at most 6 words, e.g. "Steaming milk for the flat white" or "Logging the sample temperatures".',
+  'Make each activity a real task that fits around what the player is doing now (player.current_task and player.just_did): an ally supports or prepares the next part of that work, a rival works toward their own score, a coworker keeps the venue running, and a customer waits or reacts as a customer would.',
+  'Write `line`: one short thing the NPC would say to the player about the work at this moment (at most 16 words).',
+  'Avoid real-world instructions for dangerous work. Use exact NPC and station IDs.',
+].join(' ');
+
+/** Returns `async (context) => cast[]` or null without a key. Uses the smaller, faster Gemini model. */
+export function createNpcPlanner({ apiKey, model = MODELS.npc, fetcher = fetch } = {}) {
   if (!apiKey) return null;
   return async (context) => {
-    const response = await fetcher('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-      signal: AbortSignal.timeout(6800),
-      body: JSON.stringify({
-        model, store: false, reasoning: { effort: 'minimal' }, max_output_tokens: 900,
-        instructions: 'Direct coworkers in a 3D job simulator. For each given NPC choose a listed station and work animation that fit their occupation and their relationship to the player. An ally supports the team, a rival works toward their own score, and a coworker maintains the venue. Write a brief line the NPC can say about this shift. Avoid real-world instructions for dangerous work. Use exact NPC and station IDs.',
-        input: JSON.stringify(context),
-        text: { format: { type: 'json_schema', name: 'coworker_plan', strict: true, schema: {
-          type: 'object', additionalProperties: false, required: ['cast'],
-          properties: { cast: { type: 'array', items: {
-            type: 'object', additionalProperties: false, required: ['npc', 'station', 'action', 'line'],
-            properties: {
-              npc: { type: 'string' }, station: { type: 'string' },
-              action: { type: 'string', enum: actions }, line: { type: 'string' },
-            },
-          } } },
-        } } },
-      }),
+    const { text } = await geminiText({
+      apiKey, model, fetcher, system: planInstructions, input: JSON.stringify(context), schema: planSchema,
+      thinking: 'low', maxTokens: 1500, signal: AbortSignal.timeout(8000),
     });
-    if (!response.ok) return [];
-    const body = await response.json();
-    if (body.status !== 'completed') return [];
-    const text = (body.output ?? []).filter(item => item.type === 'message')
-      .flatMap(item => item.content ?? []).filter(part => part.type === 'output_text').map(part => part.text).join('');
-    const cast = text ? JSON.parse(text).cast : [];
+    const cast = JSON.parse(text).cast;
     return Array.isArray(cast) ? cast : [];
   };
 }
@@ -130,33 +129,53 @@ export class RoomCrowd {
     this.lastTime = null;
     this.lastCallout = -Infinity;
     this.lastPlan = null;
+    this.lastPlanAt = -Infinity;
     this.activePlan = false;
     this.plans = new Map();
   }
 
-  plan(state) {
-    const stage = state.event?.fired ? 'changed' : 'opening';
-    if (!this.planner || this.activePlan || this.lastPlan === stage) return;
+  plan(state, now = Date.now()) {
+    // Re-plan when the event fires or any player moves on to another step, so coworkers react to the work.
+    const steps = Object.values(state.players ?? {}).map(p => p.step ?? state.cur).sort().join(',');
+    const stage = `${state.event?.fired ? 'changed' : 'opening'}:${steps}`;
+    if (!this.planner || this.activePlan || this.lastPlan === stage || now - this.lastPlanAt < REPLAN_GAP_MS) return;
     this.lastPlan = stage;
+    this.lastPlanAt = now;
     this.activePlan = true;
+    const step = Object.values(state.players ?? {}).find(p => Number.isInteger(p.step))?.step ?? state.cur;
+    const current = state.objectives[step];
+    const previous = state.objectives.filter(o => state.done.includes(o.id)).at(-1);
     const context = {
-      occupation: this.blueprint.occupation, title: this.blueprint.title, objective: state.objectives[state.cur]?.label,
+      occupation: this.blueprint.occupation, title: this.blueprint.title, briefing: this.blueprint.briefing,
+      player: { current_task: current?.label ?? 'Shift complete', why_it_matters: current?.real ?? current?.tip, just_did: previous?.label ?? null },
+      change_of_plan: state.event?.fired ? this.blueprint.event?.announce?.text : null,
       stations: [...this.stations.values()].filter(s => !state.closed.includes(s.id) && !playerStations(state).has(s.id)).map(({ id, label }) => ({ id, label })),
-      npcs: this.actors.map(({ id, role, side }) => ({ id, role, side: side ?? 'coworker' })), activities: actions,
+      npcs: this.actors.map(({ id, name, role, side }) => ({ id, name, role, side: side ?? (id === this.blueprint.order?.npc ? 'customer' : 'coworker') })),
+      animations: actions,
     };
     Promise.resolve().then(() => this.planner(context)).then((plans) => {
       this.plans.clear();
       for (const plan of plans.slice(0, this.actors.length)) {
         if (!this.actors.some(actor => actor.id === plan?.npc) || !context.stations.some(station => station.id === plan.station) ||
             !actions.includes(plan.action) || typeof plan.line !== 'string') continue;
-        this.plans.set(plan.npc, { ...plan, line: plan.line.trim().slice(0, 125) });
+        const activity = typeof plan.activity === 'string' ? plan.activity.replace(/\s+/g, ' ').trim().slice(0, 48) : '';
+        this.plans.set(plan.npc, { ...plan, activity, line: plan.line.trim().slice(0, 125) });
+        // Someone already working shows the new activity straight away.
+        const actor = this.actors.find(a => a.id === plan.npc);
+        if (actor && activity && actor.station === plan.station && (actor.mode === 'work' || actor.mode === 'travel')) actor.activity = activity;
       }
     }).catch(() => {}).finally(() => { this.activePlan = false; });
   }
 
   smallTalk(id, player, playerId = null) {
+    if (!this.holdTalk(id, player, playerId, 2500, 3)) return null;
+    return this.plans.get(id)?.line || 'I’m getting the next station ready. How is your shift going?';
+  }
+
+  /** Stop, turn to the player and keep facing them for `ms` (the length of what is being said). */
+  holdTalk(id, player, playerId, ms, range = 4.4) {
     const actor = this.actors.find(npc => npc.id === id);
-    if (!actor || !player || distance(actor.pos, player.pos) > 3) return null;
+    if (!actor || !player || distance(actor.pos, player.pos) > range) return false;
     actor.mode = 'talk';
     actor.yaw = yawToward(actor.pos, player.pos);
     actor.activity = 'Talking';
@@ -165,8 +184,8 @@ export class RoomCrowd {
     actor.path = [];
     actor.speed = 0;
     actor.station = null;
-    actor.until = (this.lastTime ?? Date.now()) + 2500;
-    return this.plans.get(id)?.line || 'I’m getting the next station ready. How is your shift going?';
+    actor.until = Math.max(actor.until, (this.lastTime ?? Date.now()) + ms);
+    return true;
   }
 
   snapshot() {
@@ -186,7 +205,7 @@ export class RoomCrowd {
       this.actors.forEach(actor => { actor.speed = 0; });
       return [];
     }
-    this.plan(state);
+    this.plan(state, now);
     const events = [];
     const reserved = playerStations(state);
     for (const actor of this.actors) {
@@ -273,7 +292,7 @@ export class RoomCrowd {
 
       const open = [...this.stations.values()].filter(s => !state.closed.includes(s.id) && !(keepClear && reserved.has(s.id)));
       const plan = this.plans.get(actor.id);
-      const work = (actor.visits++ % 2 === 0 && open.find(s => s.id === plan?.station)) || open[(actor.visits + actor.index) % open.length];
+      const work = (actor.visits++ % 3 !== 2 && open.find(s => s.id === plan?.station)) || open[(actor.visits + actor.index) % open.length];
       const action = plan?.action ?? actions[(actor.visits + actor.index) % actions.length];
       const spot = work && ANCHORS[work.anchor];
       const offset = (this.depths.get(work?.prop) ?? 0.9) / 2 + 0.58;
@@ -290,7 +309,7 @@ export class RoomCrowd {
       }
       actor.station = work?.id;
       actor.mode = 'travel';
-      actor.activity = verbs[action];
+      actor.activity = (plan?.station === work?.id && plan?.activity) || verbs[action];
       actor.action = action;
       actor.until = 0;
     }

@@ -3,6 +3,7 @@
 import { useShift } from './store';
 import { WS_BASE, BACKEND } from './world';
 import { blip, contactSound, playAlarm, stopAlarm } from '../game/audio';
+import { lockTalk } from './talkLock';
 
 export const INTERP_MS = 110;
 const snaps = []; // { t, players, people }
@@ -157,6 +158,7 @@ function onEvent(ev) {
       break;
     case 'say':
       if (!ev.playerId || ev.playerId === s.you) s.say(npcName(ev.npc), ev.text);
+      if (ev.playerId && ev.playerId === s.you) lockTalk(ev.npc, 5000); // addressed to us: face them
       break;
     case 'objective': {
       const obj = s.state?.objectives?.find((o) => o.id === ev.id);
@@ -172,6 +174,22 @@ function onEvent(ev) {
       break;
     case 'denied':
       if (ev.playerId === s.you) deniedHandler?.(ev.reason);
+      break;
+    case 'used':
+      if (ev.playerId === s.you) contactSound('pressed', s.state?.items?.[ev.item]?.tags);
+      break;
+    case 'standing':
+      // The whole team shares a shift's standing.
+      s.set({ standingFlash: { delta: ev.delta, reason: ev.reason, id: Math.random(), at: Date.now() } });
+      if (ev.delta < 0) blip(220, 0.12, 0.07, 'square'); else blip(990, 0.08, 0.06);
+      break;
+    case 'replanned':
+      s.showBanner(ev.change, null, 6500, true);
+      blip(660, 0.1, 0.07, 'triangle'); setTimeout(() => blip(880, 0.1, 0.07, 'triangle'), 110);
+      break;
+    case 'fired':
+      stopAlarm();
+      blip(300, 0.25, 0.08, 'square'); setTimeout(() => blip(200, 0.4, 0.08, 'square'), 220);
       break;
     case 'grabbed': case 'placed': case 'handoff': case 'pressed':
       if (ev.playerId === s.you || ev.from === s.you || ev.to === s.you) contactSound(ev.type, s.state?.items?.[ev.item]?.tags);

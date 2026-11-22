@@ -11,6 +11,13 @@ import { clampToArena, finishChallenge, gameSpawn, newGame, scoreTask, sparringS
 export const MAX_PLAYERS = 4;
 export const STALE_MS = 5000; // release held items of players unseen for longer than this
 export const DROP_MS = 30000; // forget players unseen for longer than this (frees one of the 4 seats)
+export const STANDING_START = 100;
+export const MISTAKE_COST = 6; // a fumbled action (wrong spot, closed station, item that does not fit)
+const MISTAKE_GAP_MS = 2000; // one gesture misfire is not three mistakes
+const WAIT_COST = 2; // per WAIT_STEP_MS that a customer waits past their patience
+const WAIT_STEP_MS = 5000;
+// Denials that are the player's mistake (not lag, a teammate, or the room).
+const MISTAKES = [/^occupied$/, /does not fit/, /^closed$/, /^needs /, /^hands full$/, /^not holding/, /^not now$/];
 
 const CTX = Symbol('workshift.ctx');
 const SURFACES = Object.keys(ANCHORS).filter((id) => ANCHORS[id].kind === 'surface');
@@ -73,6 +80,9 @@ export function createRoom(blueprint, catalog, now = Date.now()) {
     closed: [],
     event: { fired: false, at: null },
     score: { startedAt: now, finishedAt: null, skills: {} },
+    // How the shift is going for the boss. Mistakes, a customer kept waiting and bad conduct lower it; at 0 the
+    // player loses the job. Sparring matches are scored by the match instead.
+    ...(blueprint.game?.kind === 'sparring' ? {} : { standing: { value: STANDING_START, failed: null, last: null } }),
   };
   Object.defineProperty(state, CTX, { value: ctx, enumerable: false });
   refresh(state, ctx);
@@ -163,6 +173,38 @@ function deny(events, playerId, reason) {
   events.push({ type: 'denied', playerId, reason });
 }
 
+/**
+ * Change the job standing by `delta` with a reason the player sees. At 0 the shift ends: they lost the job.
+ * Exported (via adjustStanding) for the room server, which applies conduct and conversation effects.
+ */
+function changeStanding(state, ctx, delta, reason, now, events, playerId = null) {
+  const st = state.standing;
+  if (!st || state.phase !== 'play' || !delta) return;
+  st.value = clamp(Math.round(st.value + delta), 0, STANDING_START);
+  st.last = { delta, reason, at: now };
+  events.push({ type: 'standing', value: st.value, delta, reason, ...(playerId ? { playerId } : {}) });
+  if (st.value > 0) return;
+  st.failed = { reason, at: now };
+  state.phase = 'review';
+  state.score.finishedAt = now;
+  const boss = ctx.npcs.get(ctx.bp.mentor) ?? [...ctx.npcs.values()].find((n) => n.id !== ctx.bp.order?.npc) ?? [...ctx.npcs.values()][0];
+  if (boss) events.push({ type: 'say', npc: boss.id, text: "I'm sorry, that's not going to work today. Let's call it here." });
+  events.push({ type: 'fired', reason });
+  events.push({ type: 'review' });
+}
+
+/** Room-server entry point for standing changes (conduct, how a conversation went). */
+export function adjustStanding(state, delta, reason, now = Date.now(), playerId = null) {
+  const events = [];
+  try {
+    const s = clone(state);
+    changeStanding(s, ctxOf(s), delta, String(reason ?? '').slice(0, 120), now, events, playerId);
+    return { state: s, events };
+  } catch (err) {
+    return { state, events: [] };
+  }
+}
+
 function maybeReview(state, ctx, now, events) {
   if (state.phase !== 'play' || ctx.bp.game?.kind === 'sparring') return;
   if (state.done.length < state.objectives.length) return;
@@ -245,7 +287,7 @@ function release(state, ctx, playerId, events) {
 
 // ---------- intents ----------
 
-const GAME_VERBS = new Set(['grab', 'place', 'press', 'talk', 'handoff', 'strike']);
+const GAME_VERBS = new Set(['grab', 'place', 'press', 'use', 'talk', 'handoff', 'strike']);
 
 export function applyIntent(state, playerId, intent, now = Date.now()) {
   const events = [];
@@ -287,6 +329,9 @@ export function applyIntent(state, playerId, intent, now = Date.now()) {
       case 'press':
         press(s, ctx, playerId, intent, now, events);
         break;
+      case 'use':
+        use(s, ctx, playerId, p, intent, now, events);
+        break;
       case 'talk':
         talk(s, ctx, playerId, intent, now, events);
         break;
@@ -302,6 +347,7 @@ export function applyIntent(state, playerId, intent, now = Date.now()) {
       default:
         deny(events, playerId, `unknown intent ${String(t)}`);
     }
+    penalizeMistakes(s, ctx, playerId, t, now, events);
     return { state: s, events };
   } catch (err) {
     return { state, events: [{ type: 'denied', playerId, reason: `error: ${err?.message ?? err}` }] };
@@ -424,6 +470,42 @@ function talk(s, ctx, playerId, intent, now, events) {
   events.push({ type: 'say', npc: npc.id, text: obj ? `Next up: ${obj.label}` : (npc.lines?.done ?? 'Nice work.') });
 }
 
+/**
+ * Do the trade action of the current step with the item in hand (pour, wipe, tamp, scan...): `target` is a
+ * station or "station.slot". When the step names `sets`, the item sitting in that slot gains the tag (a poured cup
+ * is now a latte). Only the current step's action does something; anything else is "not now".
+ */
+function use(s, ctx, playerId, p, intent, now, events) {
+  const target = intent.target;
+  const [stId, slotId] = splitTarget(target);
+  const st = ctx.stations.get(stId);
+  if (!st) return deny(events, playerId, `no station ${stId}`);
+  if (s.closed.includes(stId)) return deny(events, playerId, 'closed');
+  refresh(s, ctx);
+  const index = actionableStep(s, playerId);
+  const obj = index === null ? null : s.objectives[index];
+  if (!obj || obj.verb !== 'use' || obj.target !== target) return deny(events, playerId, 'not now');
+  if (obj.item && p.held !== obj.item) return deny(events, playerId, `not holding ${obj.item}`);
+  const there = slotId !== null ? itemAt(s, target) : null;
+  if (obj.sets && slotId !== null) {
+    if (!there) return deny(events, playerId, `needs ${slotId}`);
+    if (!s.items[there].tags.includes(obj.sets)) s.items[there].tags.push(obj.sets);
+  }
+  events.push({ type: 'used', playerId, item: p.held, target, action: obj.action ?? 'use', ...(there && obj.sets ? { on: there, sets: obj.sets } : {}) });
+  progress(s, ctx, playerId, (o) => o === obj, intent.skillScore, now, events);
+}
+
+/** A fumbled action costs standing (once per short window, so one misread gesture is one mistake). */
+function penalizeMistakes(s, ctx, playerId, t, now, events) {
+  if (!s.standing || !['grab', 'place', 'press', 'use', 'handoff'].includes(t)) return;
+  const denial = events.find((e) => e.type === 'denied' && e.playerId === playerId);
+  if (!denial || !MISTAKES.some((re) => re.test(denial.reason))) return;
+  const p = s.players[playerId];
+  if (p && now - (p.lastMistake ?? -Infinity) < MISTAKE_GAP_MS) return;
+  if (p) p.lastMistake = now;
+  changeStanding(s, ctx, -MISTAKE_COST, 'Fumbled a task', now, events, playerId);
+}
+
 function handoff(s, ctx, playerId, p, intent, now, events) {
   const to = intent.to;
   const q = s.players[to];
@@ -466,6 +548,18 @@ export function tick(state, now = Date.now(), { rivalStation } = {}) {
       }
     }
     if (ctx.bp.game && state.phase === 'play') tickGeneratedGame(w(), ctx.bp.game, now, events, rivalStation);
+    // A customer kept waiting past their patience costs standing, a little at a time.
+    const order = ctx.bp.order;
+    if (order && state.standing && state.phase === 'play' && Object.keys(state.players).length) {
+      const over = now - state.startedAt - order.patienceSec * 1000;
+      const due = over > 0 ? Math.floor(over / WAIT_STEP_MS) + 1 : 0;
+      const charged = state.standing.waits ?? 0;
+      if (due > charged) {
+        w().standing.waits = due;
+        const who = ctx.npcs.get(order.npc)?.name ?? 'The customer';
+        changeStanding(w(), ctx, -WAIT_COST * (due - charged), `${who} has been waiting too long`, now, events);
+      }
+    }
     return { state: s ?? state, events };
   } catch (err) {
     return { state, events: [{ type: 'error', reason: String(err?.message ?? err) }] };
@@ -490,6 +584,25 @@ function fireEvent(s, ctx, now, events) {
   scoreTask(s, ctx.bp.game, now, events);
   // Items held inside the closed station stay there; the validator proves the revised task never needs them.
   settle(s, ctx, now, events);
+}
+
+/**
+ * Swap the unfinished part of the shift for `objectives` (a plan changed by what was said, e.g. a customer changes
+ * their order). Finished steps stay; a pending scripted complication is dropped, since the change replaces it.
+ */
+export function replanRemaining(state, objectives, now = Date.now()) {
+  const events = [];
+  try {
+    const ctx = ctxOf(state);
+    const s = clone(state);
+    const done = new Set(s.done);
+    s.objectives = s.objectives.filter((o) => done.has(o.id)).concat(JSON.parse(JSON.stringify(objectives)));
+    if (!s.event.fired) { s.event.fired = true; s.event.at = null; }
+    settle(s, ctx, now, events);
+    return { state: s, events };
+  } catch (err) {
+    return { state, events: [], error: String(err?.message ?? err) };
+  }
 }
 
 /** The first unfinished objective of the whole shift, or null. */

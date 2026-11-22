@@ -1,6 +1,6 @@
-// Scenario generation with OpenAI (F1, N1, N2).
+// Scenario generation with Gemini (F1, N1, N2).
 // One bounded request per uncached occupation; if the answer fails validation, one retry with the errors appended.
-// The whole job (both attempts) must finish inside the budget (default 45 s), otherwise it fails and the host picks a demo.
+// The whole job (both attempts) must finish inside the budget (default 60 s), otherwise it fails and the host picks a demo.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,8 @@ import { Blueprint } from '../../frontend/src/shared/schema.js';
 import { SHELLS, SHELL_IDS, ANCHORS } from '../../frontend/src/shared/layout.js';
 import { checkBlueprint } from '../../frontend/src/shared/validate.js';
 import { normalise } from './demos.js';
+import { geminiText, MODELS, usageOf } from './geminiClient.js';
+import { refusal } from './safety.js';
 
 const logFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '../logs/generation.jsonl');
 const anchorsOf = (...kinds) => Object.keys(ANCHORS).filter((id) => kinds.includes(ANCHORS[id].kind));
@@ -64,7 +66,10 @@ export function responseSchema(menu, { propEnums = false } = {}) {
   delete P.roles;
   for (const list of [P.objectives, P.event?.properties?.replaceRemaining]) {
     const props = list?.items?.properties;
-    if (props) { delete props.role; delete props.after; }
+    if (props) {
+      delete props.role; delete props.after;
+      props.skill = { type: 'string', enum: ['none'] }; // no mini-games: every step is a plain action
+    }
   }
   s.required = s.required.filter(key => key !== 'roles');
   // Anchor enums are small. The semantic validator checks catalog IDs against the full catalog.
@@ -110,12 +115,13 @@ function omitNullFields(value) {
 
 export function systemPrompt(menu, example) {
   const lines = [
-    'You are the scenario director for Workshift, a first-person multiplayer occupation simulator. The request can include a job, venue, situation, and style. Turn it into an original playable game with a specific setting, player actions, NPC roles, and clear stakes. Use the game schema as the complete list of mechanics the runtime can execute.',
+    'You are the scenario director for Workshift, a first-person multiplayer occupation simulator. A player names a job (sometimes with a venue, situation or style) because they are curious whether it could be their career. Turn it into a short, vivid shift that feels like a real day in that job: a specific place, real people, a real task done in its real order, and a reason it matters today.',
+    'Make it engaging: open with someone who needs something (a customer, a patient, a deadline, a supervisor), let the work build toward delivering it, and put a believable complication in the middle. Every physical action must stand for a real piece of the job (fetching the right material, setting it in the right equipment, running the machine, handing over the result). Talking is part of the work: taking an order, confirming details, briefing a colleague, reassuring a customer, reporting back. NPCs answer the player out loud and in character, so give them a personality and things worth asking about.',
     'Decide what players do repeatedly and what makes them succeed, then cast NPCs who fit that loop and write the briefing around those rules. Treat any reference to an existing game as a genre cue. Invent the venue, cast, dialogue, and visual identity.',
     'Available mechanics: set game to null for an occupation workflow with a mid-shift complication. Set game.kind to challenge for a timed workflow with a cooperating or competing NPC. Set game.kind to sparring for a first-person arcade sports match with rounds, scoring, and a reactive rival.',
     'Arcade boxing example: a local rival calls you into a five-sided ring, a coach can brief your corner, and a bell starts each round. Pick a venue and mat, points target, round count, round duration, and an opponent from the cast. A pressure rival closes in faster, a counter rival covers after player attacks, and a steady rival uses a regular rhythm. The player scores by landing virtual strikes within reach and can guard when the rival winds up. Use abstract scoring and non-graphic feedback. Leave stations, items, decor and objectives empty and event null for this mode.',
     'Timed challenges use the workflow tasks and event. Set a goal that uses most of the task path and can still be reached on the shortest path. An ally earns a small bonus on every second completed task. A rival gains points while working at open stations, at the configured pace, and wins by reaching the target first. Give players time to walk between stations. Give the partner a job-specific reason to help or compete, such as a coworker rushing the last shipment or a rival cook trying to plate first.',
-    'Players use upper-body webcam gestures. Raising shoulders moves forward, head motion turns, closing a hand or pinching can grab, opening the hand can place, an open palm can press, and waving at a person can talk. Sparring uses a virtual strike and a two-open-palm guard. Write instructions only for supported actions. All players share round or shift progress.',
+    'Players use upper-body webcam gestures and their voice. Raising shoulders moves forward, head motion turns, closing a hand or pinching grabs, opening the hand places, an open palm presses, and waving at or speaking to a person talks to them. There are NO mini-games: never ask for timing, aiming, turning a wheel, holding steady or rhythm. Every step is one plain grab, place, press or talk. Sparring uses a virtual strike and a two-open-palm guard. Write instructions only for supported actions. All players share round or shift progress.',
     'Output one JSON object matching the response schema. Use null for unused fields that allow null. Use only prop IDs from the catalog menu below.',
     '',
     'WORKPLACE: one compact 14 m x 11 m work area with fixed anchors. Pick the closest equipment and architecture family using `shell`:',
@@ -135,21 +141,25 @@ export function systemPrompt(menu, example) {
     '',
     'RULES (the result is machine-checked; a broken shift is thrown away):',
     '- For workflows and timed challenges use 2-5 stations, 2-6 items, 0-5 decor, 2-3 NPCs with a mix of coworkers and people the role serves. Ids are short snake_case and unique across stations, items and npcs. Keep every string short.',
-    '- objectives: 5-8 steps (never more than 10) in play order, forming the real task of the job, e.g. grab cup -> place cup in espresso.cup -> press espresso.brew -> grab cup -> place cup in pickup.pickup.',
+    '- objectives: 6-9 steps (never more than 10) in play order, forming the real task of the job, e.g. take the order -> grab the cup -> seat it under the espresso machine -> pull the shot -> grab the milk jug -> pour the milk into the cup -> serve it.',
+    '  The heart of every shift is 2-4 use steps: the hands-on craft of the job done with a tool or ingredient in hand (a barista pours and tamps, a cook seasons and flips, a nurse swabs and checks, a mechanic tightens, a florist trims). Fetching and placing only connects the craft steps; never make a shift that is mostly carrying things around.',
     '  Only stations with slots can receive items (furniture and decor have none); place targets use exactly the slot ids listed in the menu.',
     '  grab: target = item id. place: target = "<stationId>.<slotId>" or a surface anchor, `item` = the item id. press: target = "<stationId>.<controlId>". talk: target = npc id.',
+    '  use: the player does the trade action with the item they hold. `item` = the held tool or ingredient (it must be held: grab it first, or it is still in hand from an earlier step). target = "<stationId>.<slotId>" to work on the item sitting in that slot (it must be there by then), or "<stationId>" to work on the station itself (wipe the counter). action = the real verb in one word (pour, steam, tamp, wipe, chop, season, scan, swab, tighten, trim, stir). motion = the one gesture that does it: tilt (pour, drizzle, sprinkle, water, season), scrub (wipe, stir, mix, sand, brush, polish, sweep), strike (tamp, chop, hammer, knead, stamp, staple), apply (scan, swab, check, inject, spray, measure). sets = a tag the item in the slot gains (e.g. "latte"), only when a later place needs it, else null.',
     '  A player holds ONE item at a time, so every place is directly preceded by a grab of that same item. Every place target must be empty and must accept the item tags at that moment (tags set by earlier presses count). A press needs every `requires` slot of that station filled.',
-    '  labels <= 6 words, imperative ("Seat the cup"). skill: "timing" for rhythmic presses, "steady" for careful placing, "hold" for sustained presses, else "none". Add `say` (<= 10 words) to 2-3 objectives and set it to null on the rest.',
+    '  labels <= 6 words, imperative, in the job\'s own words ("Seat the portafilter", not "Place item"). skill is always "none". Add `say` (<= 12 words, a natural spoken reaction) to 2-3 objectives and set it to null on the rest.',
+    '  Include 1-2 talk objectives where real communication happens in this job (take or confirm the order, check in with the lead, explain the result to the customer), spaced through the shift, not only at the start.',
     '- event: an occupation-relevant complication, fired `delaySec` (2-5) seconds after objective `after`. replaceRemaining (2-6 objectives, NEW unique ids) replaces EVERY objective after `after` and must finish the job.',
     '  A closed station rejects everything, including taking items OUT of it: an item sitting in the closed station is lost. replaceRemaining must never use the closed station or an item inside it.',
     '  Proven pattern: put two stations of the same prop in the room (main + backup) and a spare item on a surface. after = the objective that places the item into the main station; close = the main station; replaceRemaining = grab the spare item -> place it in the backup -> press backup control -> grab it -> deliver it.',
     '  An event with a null `close` is also fine (e.g. a customer changes the order or the delivery spot).',
-    '- npcs: realistic co-workers / customers. lines.intro briefs the task (<= 16 words), lines.done congratulates (<= 8 words).',
+    '- npcs: realistic co-workers / customers with a name, a role and a distinct personality. lines.intro is what they say when the player talks to them at the start, spoken and specific (<= 20 words, e.g. "Morning! Table four wants two flat whites, extra hot. Can you grab the milk?"), lines.done congratulates in character (<= 10 words).',
     '- occupation: just the short job name. briefing: 1-2 short sentences, second person. title: <= 5 words. facts: 2-3 true, interesting facts about the real job.',
     '',
     'REALISM (the player is deciding whether this could be their career, so show the real job honestly):',
     '- Make the task path the real sequence a worker follows, with the real names of tools, materials and checks. Cast people the job actually serves and works beside.',
     '- tip on EVERY objective, including replaceRemaining: one real technique, standard or reason a professional uses for that step (<= 16 words), e.g. "Tamp level and firm so the water flows evenly." Never give instructions that would be dangerous to try without training.',
+    '- real on EVERY objective, including replaceRemaining: what this simulated gesture stands for in the real job and why it matters to the work (<= 18 words), in second person, e.g. "Seating the portafilter locks the puck in, so pressure builds evenly for a balanced shot." Describe the real work, not the webcam gesture.',
     '- mentor: id of the experienced coworker who coaches (says each tip). Not a customer.',
     '- npcs[].lines.ambient: 1-3 short call-outs a coworker really says on shift, in the trade jargon (<= 6 words, e.g. "Behind!", "Two flat whites on bar"). Empty for customers.',
     '- order (workflow and challenge shifts; null for sparring): the person waiting on the finished work. npc = that NPC, text = exactly what they asked for in real terms (<= 10 words), patienceSec = how long they wait happily in this game (60-240), waiting = what they say once the wait runs long (<= 10 words). The last objectives deliver it.',
@@ -167,53 +177,25 @@ export function systemPrompt(menu, example) {
  * @param {string} [o.apiKey]
  * @param {string} [o.model]
  * @param {number} [o.budgetMs]
- * @param {string} [o.reasoning]
+ * @param {string} [o.thinking] Gemini thinking level (low, medium, high)
  * @param {typeof fetch} [o.fetcher]
  * @param {object} [o.example] blueprint used as a format example in the prompt
  * @param {(req:{system:string, user:string, schema:object, signal:AbortSignal}) => Promise<{text:string, usage?:object}>} [o.callModel]
  */
 export function createGenerator({
   catalog,
-  apiKey = process.env.OPENAI_API_KEY,
-  model = process.env.OPENAI_MODEL || 'gpt-6.2-astra',
-  budgetMs = Number(process.env.OPENAI_BUDGET_MS) || 45000,
-  reasoning = process.env.OPENAI_REASONING_EFFORT || 'low',
+  apiKey = process.env.GEMINI_API_KEY,
+  model = process.env.GEMINI_MODEL || MODELS.scenario,
+  budgetMs = Number(process.env.GEMINI_BUDGET_MS) || 60000, // Neon takes ~40 s for a full shift
+  thinking = process.env.GEMINI_THINKING_LEVEL || 'low',
   example = null, callModel = null, fetcher = fetch, log = console,
+  screen = null, // async (request) => { appropriate, reason, suggestion }, run alongside generation
 } = {}) {
   const cache = new Map(); // normalised occupation -> blueprint
   const inflight = new Map();
 
-  const call = callModel ?? (async ({ system, user, schema, signal }) => {
-    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
-    let response;
-    try {
-      response = await fetcher('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-        signal,
-        body: JSON.stringify({
-          model, instructions: system, input: user, store: false,
-          reasoning: { effort: reasoning },
-          text: { format: { type: 'json_schema', name: 'workshift_blueprint', schema, strict: true } },
-        }),
-      });
-    } catch (error) {
-      if (signal.aborted) throw error;
-      throw new Error('Could not reach the OpenAI API.');
-    }
-    if (response.status === 401) throw new Error('OpenAI rejected the API key.');
-    if (response.status === 403 || response.status === 404) throw new Error('Check that your OpenAI project has access to the configured model.');
-    if (response.status === 429) throw new Error('OpenAI returned a quota or rate limit error.');
-    if (!response.ok) throw new Error(`OpenAI request failed (HTTP ${response.status}).`);
-    const result = await response.json();
-    const parts = (result.output ?? []).filter(item => item.type === 'message')
-      .flatMap(item => item.content ?? []);
-    if (parts.some(part => part.type === 'refusal')) throw new Error('OpenAI declined to generate this scenario.');
-    if (result.status !== 'completed') throw new Error('OpenAI did not complete the scenario response.');
-    const text = parts.filter(part => part.type === 'output_text').map(part => part.text).join('');
-    if (!text) throw new Error('OpenAI returned an empty scenario response.');
-    return { text, usage: result.usage };
-  });
+  const call = callModel ?? (({ system, user, schema, signal }) =>
+    geminiText({ apiKey, model, system, input: user, schema, thinking, signal, fetcher }));
 
   async function run(occupation, previousTitle) {
     const t0 = Date.now();
@@ -294,7 +276,7 @@ export function createGenerator({
   }
 
   function record(meta) {
-    log.log(`[openai] ${JSON.stringify({ ...meta, attempts: meta.attempts.map(({ errors, warnings, ...a }) => ({ ...a, errors: errors?.length ?? 0 })) })}`);
+    log.log(`[gemini] ${JSON.stringify({ ...meta, attempts: meta.attempts.map(({ errors, warnings, ...a }) => ({ ...a, errors: errors?.length ?? 0 })) })}`);
     try {
       fs.mkdirSync(path.dirname(logFile), { recursive: true });
       fs.appendFileSync(logFile, JSON.stringify(meta) + '\n');
@@ -307,12 +289,22 @@ export function createGenerator({
     const previous = cache.get(key);
     if (!fresh && previous) {
       const meta = { at: new Date().toISOString(), occupation, model, ok: true, ms: 0, cacheHit: true };
-      log.log(`[openai] ${JSON.stringify(meta)}`);
+      log.log(`[gemini] ${JSON.stringify(meta)}`);
       return { ok: true, blueprint: previous, meta };
     }
     if (!fresh && inflight.has(key)) return inflight.get(key);
+    // The appropriateness check runs alongside generation, so it adds no wait to a fine request.
+    const verdict = screen ? Promise.resolve().then(() => screen(occupation)).catch(() => ({ appropriate: true })) : null;
     const p = run(occupation, previous?.title)
       .catch((err) => ({ ok: false, error: String(err?.message ?? err), meta: { occupation, model } }))
+      .then(async (r) => {
+        const v = await verdict;
+        if (v && !v.appropriate) {
+          log.log(`[gemini] ${JSON.stringify({ occupation, refused: v.reason })}`);
+          return { ok: false, error: refusal(v), refused: true, meta: { occupation, model } };
+        }
+        return r;
+      })
       .then((r) => {
         if (!fresh) inflight.delete(key);
         if (r.ok) cache.set(key, r.blueprint);
@@ -324,14 +316,6 @@ export function createGenerator({
 
   return { generate, cache, model };
 }
-
-const usageOf = (u) =>
-  u ? {
-    prompt: u.input_tokens ?? 0,
-    output: (u.output_tokens ?? 0) - (u.output_tokens_details?.reasoning_tokens ?? 0),
-    thoughts: u.output_tokens_details?.reasoning_tokens ?? 0,
-    total: u.total_tokens ?? 0,
-  } : null;
 
 const sumUsage = (attempts) =>
   attempts.reduce(

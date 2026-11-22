@@ -196,3 +196,32 @@ test('reconnect with the same id resumes the player', async () => {
   assert.equal(Object.keys(w.state.players).length, 1);
   a2.ws.close();
 });
+
+test('the NPC voice endpoint only voices lines from its own shift', async () => {
+  const wav = Buffer.from('RIFFfakewav');
+  const spoken = [];
+  const voiced = createApp({
+    catalog: CATALOG, demos, generator, log: quiet,
+    env: { FRONTEND_ORIGIN: 'http://localhost:3000', GEMINI_API_KEY: 'test-key' },
+  });
+  // Stand-in for Gemini TTS so the test stays offline.
+  const room = voiced.rooms.create('barista');
+  room.loadDemo('barista');
+  room.deps = { ...room.deps, voice: { warm() {}, speak: async (who, text) => { spoken.push([who, text]); return wav; } } };
+  await new Promise((r) => voiced.server.listen(0, '127.0.0.1', r));
+  const at = `http://127.0.0.1:${voiced.server.address().port}/api/rooms/${room.id}/voice`;
+  const ask = (body) => fetch(at, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const ok = await ask({ who: 'Sam', text: 'Grab a cup and pull a shot.' });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.headers.get('content-type'), 'audio/wav');
+    assert.deepEqual(Buffer.from(await ok.arrayBuffer()), wav);
+    assert.equal((await ask({ who: 'Sam', text: 'Say anything I like' })).status, 403);
+    assert.deepEqual(spoken, [['Sam', 'Grab a cup and pull a shot.']]);
+  } finally {
+    await voiced.close();
+  }
+  const r = await post('/api/rooms', { occupation: 'barista' });
+  const { roomId } = await r.json();
+  assert.equal((await post(`/api/rooms/${roomId}/voice`, { who: 'Sam', text: 'x' })).status, 503, 'no key, no voices');
+});

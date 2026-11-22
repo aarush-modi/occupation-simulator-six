@@ -1,9 +1,10 @@
-// Turning an interactable into an intent: skill checks first when the current objective asks for one,
-// then the intent goes to the server, whose denial (if any) is shown as a toast.
+// Turning an interactable into an intent: it goes straight to the server (no mini-games: every step is a plain
+// grab, place, press or talk), and a denial is shown as a toast.
 import { useShift } from './store';
 import { send, onDenied } from './net';
-import { indexBlueprint, matchesObjective, denialText, splitTarget, myObjective } from './world';
+import { indexBlueprint, denialText, splitTarget } from './world';
 import { blip } from '../game/audio';
+import { lockTalk } from './talkLock';
 
 let cachedBp = null, cachedIdx = null;
 export function getIndex() {
@@ -27,8 +28,9 @@ onDenied((reason) => {
 export function act(intent, it = null, side) {
   lastIt = it ?? inferInteractable(intent);
   if (intent.t === 'grab') lastGrabAt = performance.now();
+  if (intent.t === 'talk') lockTalk(intent.npc, 6000);
   const sent = send(side ? { ...intent, hand: side } : intent);
-  if (sent && it?.pos && ['grab', 'place', 'press', 'handoff'].includes(intent.t)) {
+  if (sent && it?.pos && ['grab', 'place', 'press', 'use', 'handoff'].includes(intent.t)) {
     latestHandAction = { side: side ?? 'right', kind: intent.t, target: [...it.pos], time: performance.now() };
   }
   return sent;
@@ -41,38 +43,9 @@ function inferInteractable(intent) {
   return sub != null ? { station: st } : null;
 }
 
-const SKILLS = {
-  timing: (obj) => ({ type: 'timing', title: obj.label, help: 'Make a fist when the marker is in the green.', band: [0.56, 0.72], attempts: 3, hitMsg: 'Nailed it!', overMsg: 'Too late', underMsg: 'Too early' }),
-  steady: (obj) => ({ type: 'steady', title: obj.label, help: 'Keep the marker in the green.', band: [0.42, 0.62], hold: 2.5, drift: 0.5, start: 0.8, format: (v) => `${Math.round(v * 100)}%` }),
-  hold: (obj) => ({ type: 'presshold', title: obj.label, help: 'Push your palm toward the camera and hold until the ring fills.', duration: 1.4 }),
-};
-
 /** Use the focused interactable. */
 export function use(it, side) {
   const s = useShift.getState();
-  if (!it || !s.state || s.state.phase !== 'play' || s.skill) return;
-  const obj = myObjective(s.state, s.you);
-  const closed = it.station && s.state.closed.includes(it.station);
-  const unmet = it.kind === 'press' && (it.requires ?? []).some((slot) => !Object.values(s.state.items).some((x) => x.at === `${it.station}.${slot}` && !x.holder));
-  // Skill check only when this action would actually complete the objective; otherwise let the server explain.
-  if (obj && obj.skill && obj.skill !== 'none' && SKILLS[obj.skill] && matchesObjective(obj, it) && !closed && !unmet) {
-    const skill = SKILLS[obj.skill](obj);
-    s.set({
-      skill: {
-        ...skill,
-        onDone: (score) => {
-          act({ ...it.intent, skillScore: Math.max(0, Math.min(1, score ?? 0)) }, it, side);
-        },
-      },
-    });
-    return;
-  }
+  if (!it || !s.state || s.state.phase !== 'play') return;
   act(it.intent, it, side);
-}
-
-export function closeSkill(result) {
-  const s = useShift.getState();
-  const sk = s.skill;
-  s.set({ skill: null });
-  sk?.onDone?.(result);
 }

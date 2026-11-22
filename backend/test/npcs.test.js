@@ -33,33 +33,70 @@ test('a generated room adds moving coworkers, shared snapshots and private proxi
   assert.equal(room.state.cur, 0, 'greetings leave talk task available');
 });
 
-test('the smaller OpenAI model batches NPC direction and the room rejects unknown station IDs', async () => {
-  let called = false;
+const geminiReply = (value) => Response.json({ status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: JSON.stringify(value) }] }] });
+
+test('the smaller Gemini model directs NPCs with job-specific activities and the room rejects unknown station IDs', async () => {
+  let calls = 0;
   const planner = createNpcPlanner({ apiKey: 'test', fetcher: async (url, request) => {
-    called = true;
-    assert.equal(url, 'https://api.openai.com/v1/responses');
+    calls++;
+    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
     const input = JSON.parse(request.body);
-    assert.equal(input.model, 'gpt-5-mini');
+    assert.equal(input.model, 'gemini-4-hydrogen');
     assert.equal(input.store, false);
+    assert.deepEqual(input.response_format.schema.properties.cast.items.required, ['npc', 'station', 'action', 'activity', 'line']);
     const payload = JSON.parse(input.input);
     assert.equal(payload.npcs.length, 2);
-    return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({
+    assert.equal(payload.player.current_task, calls === 1 ? 'Check in with Sam' : 'Grab a cup');
+    return geminiReply({
       cast: [
-        { npc: 'mgr', station: 'main', action: 'prepare', line: 'Good morning. We are setting up for service.' },
-        { npc: 'coworker', station: 'missing', action: 'stock', line: 'I will use the missing station.' },
+        { npc: 'mgr', station: calls === 1 ? 'main' : 'backup', action: 'prepare', activity: calls === 1 ? 'Dialing in the grinder' : 'Warming cups for your shot', line: 'Good morning. We are setting up for service.' },
+        { npc: 'coworker', station: 'missing', action: 'stock', activity: 'Nothing', line: 'I will use the missing station.' },
       ],
-    }) }] }] });
+    });
   } });
   const bp = blueprint();
   const crowd = new RoomCrowd(bp, CATALOG, planner);
-  const player = { active: true, pos: [6, 0, 4], lastSeen: 1000 };
-  const state = { phase: 'play', players: { p: player }, closed: [], cur: 0, objectives: bp.objectives };
+  const player = { active: true, pos: [6, 0, 4], lastSeen: 1000, step: 0 };
+  const state = { phase: 'play', players: { p: player }, closed: [], cur: 0, done: [], objectives: bp.objectives };
   crowd.step(state, 1000);
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(called, true);
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(calls, 1);
   assert.equal(crowd.plans.get('mgr').action, 'prepare');
+  assert.equal(crowd.plans.get('mgr').activity, 'Dialing in the grinder');
   assert.equal(crowd.plans.has('coworker'), false);
   assert.equal(crowd.smallTalk('mgr', { pos: crowd.snapshot().mgr.pos }), 'Good morning. We are setting up for service.');
+
+  // The player moves on: coworkers are re-directed, but not more often than every few seconds.
+  player.step = 1; state.done = ['o1'];
+  player.lastSeen = 3000;
+  crowd.step(state, 3000);
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(calls, 1, 'too soon to re-plan');
+  player.lastSeen = 7500;
+  crowd.step(state, 7500);
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(calls, 2);
+  assert.equal(crowd.plans.get('mgr').activity, 'Warming cups for your shot');
+  for (let t = 7550; t < 16000; t += 50) {
+    player.lastSeen = t;
+    crowd.step(state, t);
+    if (crowd.snapshot().mgr.station === 'backup') break;
+  }
+  assert.equal(crowd.snapshot().mgr.station, 'backup', 'the main machine is next for the player, so Sam works elsewhere');
+  assert.equal(crowd.snapshot().mgr.activity, 'Warming cups for your shot', 'the activity label is the generated one');
+});
+
+test('an NPC talking to a player keeps facing them for the whole line', () => {
+  const crowd = new RoomCrowd(blueprint(), CATALOG, null);
+  const npc = crowd.snapshot().mgr;
+  const player = { pos: [npc.pos[0] + 1, 0, npc.pos[2]] };
+  crowd.lastTime = 0;
+  assert.equal(crowd.holdTalk('mgr', player, 'p', 9000), true);
+  const after = crowd.snapshot().mgr;
+  assert.equal(after.mode, 'talk');
+  assert.ok(Math.abs(after.yaw - Math.PI / 2) < 1e-9, 'turned toward the player');
+  assert.equal(crowd.actors.find(a => a.id === 'mgr').until, 9000);
+  assert.equal(crowd.holdTalk('mgr', { pos: [npc.pos[0] + 9, 0, npc.pos[2]] }, 'p', 1000), false, 'too far away');
 });
 
 test('coworkers keep away from the stations the player needs next', () => {

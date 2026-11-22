@@ -8,12 +8,13 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useShift } from './store';
 import { localPose, reconcile, samplePlayer, sampleNpc, send } from './net';
 import { use, getIndex, lastGrabAt } from './actions';
-import { staticInteractables, matchesObjective, KIND_GESTURES, anchorFrame, BOUNDS, myObjective } from './world';
+import { staticInteractables, matchesObjective, gesturesFor, anchorFrame, BOUNDS, myObjective } from './world';
 import TrackedHands from './TrackedHands';
 import { carryingNeeded, mayRelease } from './carry';
 import { footstep } from '../game/audio';
 import { cam, onGesture, webcamPace } from '../game/webcam/gestures';
 import { clampToArena } from '../shared/gameRules';
+import { talkLock, updateTalkLock, yawToFace } from './talkLock';
 
 export const EYE = 1.62;
 const RADIUS = 0.3;
@@ -49,7 +50,8 @@ function interactKey(s) {
   const st = s.state;
   if (!st) return '';
   const items = Object.entries(st.items).map(([id, it]) => `${id}:${it.at}:${it.holder}`).join('|');
-  return `${st.phase}#${st.players[s.you]?.held}#${st.closed.join(',')}#${items}`;
+  const step = st.objectives[st.players[s.you]?.step ?? st.cur]?.id; // a use step's spot appears with its step
+  return `${st.phase}#${st.players[s.you]?.held}#${st.closed.join(',')}#${step}#${st.objectives.length}#${items}`;
 }
 
 export default function LocalPlayer({ colliders }) {
@@ -93,7 +95,7 @@ export default function LocalPlayer({ colliders }) {
     const f = s.focus;
     // Full-body mode: a raised hand or reach ('fist') uses whatever is highlighted, whatever its kind.
     const universal = cam.mode === 'body' && name === 'fist';
-    if (!f || !(universal || (KIND_GESTURES[f.kind] ?? []).includes(name))) return;
+    if (!f || !(universal || gesturesFor(f).includes(name))) return;
     // Opening the hand immediately after a grab finishes that gesture.
     if ((name === 'release' || name === 'unpinch') && performance.now() - lastGrabAt < 450) return;
     const releasing = f.kind === 'place' || f.kind === 'handoff';
@@ -117,12 +119,28 @@ export default function LocalPlayer({ colliders }) {
       reconcile.yaw = null; reconcile.pitch = null;
     }
     const frozen = !s.started || s.state?.phase !== 'play' || !!s.skill;
+    // In a conversation the view turns to face the NPC and walking pauses.
+    let facing = null;
+    if (talkLock.npc) {
+      const person = s.state?.people?.[talkLock.npc];
+      const p = person && (sampleNpc(talkLock.npc) ?? person);
+      const speaking = Boolean(person) && (s.subtitle?.who === person.name || (s.heard?.pending && s.heard.npc === talkLock.npc));
+      const distance = p ? Math.hypot(p.pos[0] - pos.current.x, p.pos[2] - pos.current.z) : null;
+      if (updateTalkLock({ speaking, distance }) && !frozen) facing = p.pos;
+    }
     const guard = Boolean(arena && cam.enabled && cam.guard);
-    const pace = frozen || guard ? 0 : webcamPace();
+    const pace = frozen || guard || facing ? 0 : webcamPace();
     const held = s.state?.players?.[s.you]?.held ?? null;
     const camOn = cam.enabled && cam.calibrated;
     const bodyMode = camOn && cam.mode === 'body';
-    if (!frozen && camOn) {
+    if (facing) {
+      const dx = facing[0] - pos.current.x, dz = facing[2] - pos.current.z;
+      let d = yawToFace([pos.current.x, 0, pos.current.z], facing) - yaw.current;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      yaw.current += d * Math.min(1, dt * 6);
+      pitch.current = THREE.MathUtils.damp(pitch.current, Math.atan2(1.55 - EYE, Math.max(0.3, Math.hypot(dx, dz))), 6, dt);
+    } else if (!frozen && camOn) {
       yaw.current += cam.turn * dt;
       // Full-body aim assist: there is no head pitch, so tilt the view toward the focused thing. When the player
       // stands still and is not turning, ease the heading onto it so a rough torso turn is enough.
@@ -139,7 +157,7 @@ export default function LocalPlayer({ colliders }) {
         }
       } else pitch.current = THREE.MathUtils.damp(pitch.current, cam.pitch, 5, dt);
     }
-    const speedTarget = bodyMode ? (frozen || guard ? 0 : cam.forward * BODY_SPEED) : pace === 2 ? 3.85 : pace === 1 ? 1.75 : 0;
+    const speedTarget = bodyMode ? (frozen || guard || facing ? 0 : cam.forward * BODY_SPEED) : pace === 2 ? 3.85 : pace === 1 ? 1.75 : 0;
     const f = tmpV.set(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
     vel.current.x = THREE.MathUtils.damp(vel.current.x, f.x * speedTarget, pace ? 9 : 17, dt);
     vel.current.z = THREE.MathUtils.damp(vel.current.z, f.z * speedTarget, pace ? 9 : 17, dt);

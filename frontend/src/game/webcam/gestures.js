@@ -44,6 +44,7 @@ export function emitGesture(name, t, hand) {
 }
 
 export const TUNE = {
+  tiltRad: 0.6, // how far a hand turns (radians) to count as a pour
   yawDead: 0.04, yawGain: 8, turnMax: 2.0,
   pitchGain: 3.2, pitchMax: 0.7,
   fingerExt: 1.15, // tip-to-wrist vs pip-to-wrist ratio for an extended finger
@@ -211,6 +212,11 @@ export function createGestureEngine(now = () => performance.now()) {
       // they first saw, so a held tilt keeps turning the handwheel.
       const dialHand = hands.find(h => h.side === 'right') ?? hands[0];
       cam.dial = dialHand ? { side: dialHand.side, roll: dialHand.roll } : null;
+      // tilt: a hand turns well over from where it was a moment ago (pouring from what it holds).
+      const turned = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+      const tilting = hands.find(h => hist.some(sample => t - sample.t >= 250 && t - sample.t <= 900 &&
+        sample.hands.some(old => old.side === h.side && turned(h.roll, old.roll) > TUNE.tiltRad)));
+      if (tilting) emit('tilt', t, tilting.side);
 
       // Thumb and index finger work at a range of distances. The wider release threshold filters jitter.
       const sides = new Set();
@@ -291,6 +297,8 @@ export const GESTURE_HINT = {
   swipeUp: 'Swipe a hand up',
   palmPush: 'Push your palm toward the camera and hold',
   wave: 'Wave',
+  tilt: 'Tilt your hand',
+  strike: 'Bring your fist down',
   release: 'Open your fist to let go',
   one: 'Point (1 finger)',
   two: 'Show 2 fingers',
