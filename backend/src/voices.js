@@ -15,8 +15,23 @@ export function voiceFor(name) {
   return VOICES[h % VOICES.length];
 }
 
+/** A different voice for each name (in order), starting from each name's own pick. Returns Map name -> voice. */
+export function castVoices(names) {
+  const cast = new Map();
+  const taken = new Set();
+  for (const name of names) {
+    if (cast.has(name)) continue;
+    let i = VOICES.indexOf(voiceFor(name));
+    for (let tries = 0; tries < VOICES.length && taken.has(VOICES[i]); tries++) i = (i + 1) % VOICES.length;
+    cast.set(name, VOICES[i]);
+    taken.add(VOICES[i]);
+    if (taken.size === VOICES.length) taken.clear(); // more people than voices: start sharing
+  }
+  return cast;
+}
+
 /**
- * Returns { speak(who, text) -> Promise<Buffer wav>, warm(who, text) } or null without a key. `speak` is someone
+ * Returns { speak(who, text, voice?) -> Promise<Buffer wav>, warm(who, text) } or null without a key. `speak` is someone
  * waiting to hear the line, so it jumps ahead of lines that are only being prepared (`warm`).
  */
 export function createVoices({ apiKey, model = MODELS.speech, style = TEACHER_STYLE, fetcher = fetch, log = console, retryMs = RETRY_429_MS } = {}) {
@@ -44,8 +59,7 @@ export function createVoices({ apiKey, model = MODELS.speech, style = TEACHER_ST
     }
   };
 
-  function request(who, text, urgent) {
-    const voice = voiceFor(who);
+  function request(who, text, urgent, voice = voiceFor(who)) {
     const key = `${voice}|${text}`;
     const hit = cache.get(key);
     if (hit) {
@@ -68,8 +82,8 @@ export function createVoices({ apiKey, model = MODELS.speech, style = TEACHER_ST
   }
 
   return {
-    speak: (who, text) => request(who, text, true),
-    warm: (who, text) => { request(who, text, false).catch(() => {}); },
+    speak: (who, text, voice) => request(who, text, true, voice),
+    warm: (who, text, voice) => { request(who, text, false, voice).catch(() => {}); },
     voiceFor,
   };
 }

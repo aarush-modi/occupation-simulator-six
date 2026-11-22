@@ -137,6 +137,8 @@ export const Blueprint = z.object({
   roles: z.array(z.object({ id: z.string(), label: z.string(), brief: z.string() })).min(2).max(3).optional(),
   // The customer waiting on this shift's work, and how long they wait happily.
   order: z.object({ npc: npcRef, text: z.string(), patienceSec: z.int().min(30).max(600), waiting: z.string() }).optional(),
+  // Client-facing shifts: people waiting in line behind the order's customer (more join while the shift runs).
+  queue: z.array(z.object({ name: z.string(), wants: z.string() })).max(3).optional(),
   career: Career.optional(),
 });
 

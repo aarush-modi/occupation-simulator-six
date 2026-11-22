@@ -3,7 +3,7 @@
 // answers with a normal 'say' event, which the subtitle queue shows and reads aloud.
 import { useShift, npcVoiceBusy } from './store';
 import { localPose, sampleNpc, send, onEvents } from './net';
-import { pickListener, isEcho } from './listener';
+import { pickListener, isEcho, MIC_RANGE } from './listener';
 import { lockTalk } from './talkLock';
 
 const REPLY_WAIT_MS = 9000;
@@ -36,7 +36,7 @@ function canTalk(s) {
 /** Say `text` to the NPC in front of the player (from the mic or the typed chat bar). Returns who heard, or null. */
 let interruptedNext = false; // the next utterance cut an NPC off
 
-export function speakTo(text) {
+export function speakTo(text, { fromMic = false } = {}) {
   const s = useShift.getState();
   if (!canTalk(s)) return null;
   const people = {};
@@ -44,9 +44,13 @@ export function speakTo(text) {
     const p = sampleNpc(person.id) ?? person;
     people[person.id] = { id: person.id, name: person.name, pos: p.pos };
   }
-  const listener = pickListener({ focus: s.focus, people, pos: localPose.pos, yaw: localPose.yaw });
+  // Typed lines go to whoever is in earshot. The open mic also hears the player talking to someone in the real
+  // room, so it only addresses an NPC under the crosshair or close and straight ahead, and ignores one-word noise.
+  const aimed = s.focus?.kind === 'talk';
+  const listener = fromMic && !aimed && text.trim().split(/\s+/).length < 2 ? null
+    : pickListener({ focus: s.focus, people, pos: localPose.pos, yaw: localPose.yaw, ...(fromMic ? { range: MIC_RANGE, minFacing: 0.55 } : {}) });
   const id = Math.random();
-  if (!listener) { setHeard({ text, to: null, final: true, id }, 3500); return null; }
+  if (!listener) { if (!fromMic) setHeard({ text, to: null, final: true, id }, 3500); return null; }
   const interrupted = interruptedNext;
   interruptedNext = false;
   if (!send({ t: 'speak', npc: listener.id, text, ...(interrupted ? { interrupted: true } : {}) })) { setHeard({ text, to: null, final: true, offline: true, id }, 3500); return null; }
@@ -72,7 +76,7 @@ function onResult(e) {
     const r = e.results[i];
     const text = r[0]?.transcript?.trim() ?? '';
     if (!text) continue;
-    if (r.isFinal) speakTo(text);
+    if (r.isFinal) speakTo(text, { fromMic: true });
     else interim += `${text} `;
   }
   const s = useShift.getState();

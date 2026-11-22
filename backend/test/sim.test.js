@@ -51,10 +51,16 @@ test('single hold: an item has one holder and a player holds one item', () => {
   const r = room();
   assert.equal(denied(r.act('a', { t: 'grab', item: 'cup1' })), null);
   assert.equal(denied(r.act('b', { t: 'grab', item: 'cup1' })), 'held by someone else');
-  assert.equal(denied(r.act('a', { t: 'grab', item: 'cup2' })), 'hands full');
   assert.equal(r.state.items.cup1.holder, 'a');
   assert.equal(r.state.items.cup1.at, null);
   assert.equal(r.state.players.a.held, 'cup1');
+  // Picking up the next thing puts the one in hand back where it came from.
+  const home = r.state.items.cup2.at;
+  assert.equal(denied(r.act('a', { t: 'grab', item: 'cup2' })), null);
+  assert.equal(r.state.players.a.held, 'cup2');
+  assert.equal(r.state.items.cup1.holder, null);
+  assert.equal(r.state.items.cup1.at, 'S1');
+  assert.notEqual(home, null);
   assert.equal(r.state.players.b.held, null);
 });
 

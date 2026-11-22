@@ -7,9 +7,10 @@ import { geminiText, MODELS } from './geminiClient.js';
 
 const instructions = [
   'You re-plan the rest of a shift in a first-person job simulator after something changed in a conversation.',
+  'The change is an ordinary part of a normal working day; keep the work realistic and calm, the way the job really goes, with no emergencies or drama added.',
   'Write the remaining steps, in play order, so the shift now delivers what was asked, using only the stations, slots, controls, items and people listed. Keep what still makes sense from the old remaining steps.',
   'Verbs: grab (target = item id), place (target = "station.slot" or a free surface S1-S8, item = item id; it must be held, so grab it first), press (target = "station.control"; every slot it requires must hold an item), use (the trade action with the held item: item = held item, target = "station.slot" with an item in it or "station", action = one real verb, motion = tilt | scrub | strike | apply, sets = tag the item in the slot gains or null), talk (target = npc id).',
-  'An item fits a slot when one of its tags is in the slot accepts. Closed stations cannot be used. The player holds one item at a time. 2-7 steps, short imperative labels in the job\'s own words, skill always "none", new unique ids.',
+  'An item fits a slot when one of its tags is in the slot accepts. Closed stations cannot be used. The player holds one item at a time; grabbing another item puts the held one back automatically, so never add steps that only set something down or put a tool away. 2-7 steps, short imperative labels in the job\'s own words, skill always "none", new unique ids.',
   'Also write `tip` (one real technique for the step, under 14 words) and `real` (what the step stands for in the real job, under 16 words) for each step.',
 ].join(' ');
 

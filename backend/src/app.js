@@ -128,10 +128,10 @@ export function createApp({ catalog, demos, generator, env = process.env, log = 
           const text = typeof body.text === 'string' ? body.text : '';
           const who = String(body.who ?? '').slice(0, 40);
           // Only this shift's own lines, so the endpoint cannot be used as a general text-to-speech service.
-          if (!text || !room.speakable.has(text)) return reply(403, { error: 'not a line from this shift' });
+          if (!text || !room.canVoice(text)) return reply(403, { error: 'not a line from this shift' });
           let audio;
           try {
-            audio = await voices.speak(who, text);
+            audio = await voices.speak(who, text, room.voiceOf(who));
           } catch (err) {
             return reply(502, { error: String(err?.message ?? 'voice failed') });
           }

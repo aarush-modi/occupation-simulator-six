@@ -131,15 +131,19 @@ export function staticInteractables(idx, state, you) {
   if (!state || state.phase !== 'play') return out;
   const held = state.players[you]?.held ?? null;
   const closed = new Set(state.closed);
+  const step = myObjective(state, you);
+  const grabbable = (id, it) => {
+    if (it.holder || !it.at) return;
+    const f = restFrame(idx, it.at);
+    if (!f) return;
+    const h = idx.items[id]?.recipe.size[1] ?? 0.2;
+    out.push({ id: `grab:${id}`, kind: 'grab', pos: [f.pos[0], f.pos[1] + h * 0.5, f.pos[2]], r: 0.3, label: `Pick up ${idx.items[id]?.label ?? id}`, intent: { t: 'grab', item: id }, station: splitTarget(it.at)[1] != null ? splitTarget(it.at)[0] : null, item: id });
+  };
   if (!held) {
-    for (const [id, it] of Object.entries(state.items)) {
-      if (it.holder || !it.at) continue;
-      const f = restFrame(idx, it.at);
-      if (!f) continue;
-      const h = idx.items[id]?.recipe.size[1] ?? 0.2;
-      out.push({ id: `grab:${id}`, kind: 'grab', pos: [f.pos[0], f.pos[1] + h * 0.5, f.pos[2]], r: 0.3, label: `Pick up ${idx.items[id]?.label ?? id}`, intent: { t: 'grab', item: id }, station: splitTarget(it.at)[1] != null ? splitTarget(it.at)[0] : null, item: id });
-    }
+    for (const [id, it] of Object.entries(state.items)) grabbable(id, it);
   } else {
+    // Picking up what the step needs next puts the tool in hand back on the counter (the sim does that).
+    if (step?.verb === 'grab' && step.target !== held && state.items[step.target]) grabbable(step.target, state.items[step.target]);
     const tags = itemTags(idx, state, held);
     const heldLabel = idx.items[held]?.label ?? held;
     for (const st of Object.values(idx.stations)) {
@@ -156,7 +160,7 @@ export function staticInteractables(idx, state, you) {
     }
   }
   // The trade action of the player's current step, once the right thing is in hand.
-  const obj = myObjective(state, you);
+  const obj = step;
   if (obj?.verb === 'use' && held && (!obj.item || obj.item === held) && !closed.has(splitTarget(obj.target)[0])) {
     const pos = usePos(idx, obj.target);
     if (pos) out.push({ id: `use:${obj.target}`, kind: 'use', pos, r: 0.45, label: obj.label, action: obj.action, motion: obj.motion ?? 'apply', intent: { t: 'use', target: obj.target }, station: splitTarget(obj.target)[0], target: obj.target });

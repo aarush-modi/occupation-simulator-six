@@ -104,6 +104,7 @@ export function npcVoiceBusy(now = performance.now()) {
 
 // Gemini voice clips from the backend, fetched once per speaker and line.
 const clips = new Map(); // `${who}|${text}` -> Promise<ArrayBuffer | null>
+let serverVoices = true; // false once the backend says it has no voice model (then the browser voice is used)
 export function prefetchVoice(who, text) {
   const roomId = useShift.getState().roomId;
   if (!roomId || typeof window === 'undefined') return Promise.resolve(null);
@@ -111,7 +112,10 @@ export function prefetchVoice(who, text) {
   if (!clips.has(key)) {
     const pending = fetch(`${BACKEND}/api/rooms/${encodeURIComponent(roomId)}/voice`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ who, text }), signal: AbortSignal.timeout(15000),
-    }).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
+    }).then((r) => {
+      if (r.status === 503) serverVoices = false;
+      return r.ok ? r.arrayBuffer() : null;
+    }).catch(() => null);
     pending.then((bytes) => { if (!bytes && clips.get(key) === pending) clips.delete(key); });
     clips.set(key, pending);
     while (clips.size > 80) clips.delete(clips.keys().next().value);
@@ -119,7 +123,9 @@ export function prefetchVoice(who, text) {
   return clips.get(key);
 }
 
-// NPC speech: the Gemini voice, or the browser's own voice if that is unavailable. Returns a stop function.
+// NPC speech in the speaker's Gemini voice. A clip that fails is tried once more; if it still fails the line stays
+// a subtitle, so a speaker never switches to a different voice mid-shift. The browser's own voice is only used when
+// the backend has no voices at all. Returns a stop function.
 function speak(who, text, onEnd = () => {}) {
   let finished = false, stopped = false, handle = null;
   const finish = () => {
@@ -128,8 +134,12 @@ function speak(who, text, onEnd = () => {}) {
     onEnd();
   };
   // Only actual playback mutes the mic, not the wait for the clip.
-  const fallback = () => { if (stopped) return finish(); voicePlaying = true; browserSpeak(who, text, finish); };
-  prefetchVoice(who, text).then((bytes) => {
+  const fallback = () => {
+    if (stopped || serverVoices) return finish();
+    voicePlaying = true; browserSpeak(who, text, finish);
+  };
+  const retry = () => new Promise((resolve) => setTimeout(resolve, 1200)).then(() => (stopped || !serverVoices ? null : prefetchVoice(who, text)));
+  prefetchVoice(who, text).then((bytes) => bytes ?? retry()).then((bytes) => {
     if (stopped) return finish();
     if (!bytes) return fallback();
     voicePlaying = true;

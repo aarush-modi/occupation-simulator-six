@@ -15,6 +15,7 @@
 .ws-task-top { display: flex; justify-content: space-between; gap: 12px; }
 .ws-task-title { font-size: 32px; line-height: 1.05; color: #fff; }
 .ws-task-real { color: var(--ws-dim); font-size: 19px; }
+.ws-task-where { color: var(--ws-accent); font-size: 17px; letter-spacing: .1em; text-transform: uppercase; }
 .ws-meter-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 .ws-meter-row .ws-meter { flex: 1; height: 10px; gap: 3px; max-width: none; }
 .ws-meter-row[data-low] .ws-meter i[data-on] { background: #ff6a55; box-shadow: inset 0 -2px 0 #8a2a1e; }
@@ -43,6 +44,7 @@
 .ws-aim { position: absolute; left: 50%; top: 56%; transform: translateX(-50%); padding: 8px 14px; text-align: center; white-space: nowrap; display: grid; gap: 2px; }
 .ws-aim-label { font-size: 24px; color: #fff; }
 .ws-aim-hint { font-size: 17px; color: var(--ws-accent); }
+.ws-aim-sub { font-size: 15px; color: var(--ws-dim); letter-spacing: .08em; text-transform: uppercase; }
 
 /* Moments */
 .ws-toast { position: absolute; left: 50%; top: 66%; transform: translateX(-50%); padding: 6px 14px; font-size: 20px; white-space: nowrap; animation: ws-rise-c .2s var(--ws-snap) both; }

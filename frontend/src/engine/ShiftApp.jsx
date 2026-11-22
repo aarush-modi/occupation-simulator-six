@@ -189,7 +189,7 @@ function Lobby() {
           </Reply>
         )}
       </div>
-      {failed && s.isHost && <PromptBar initial={job} onStarted={go} placeholder="Try a different job" />}
+      {failed && s.isHost && <PromptBar onStarted={go} />}
     </Screen>
   );
 }

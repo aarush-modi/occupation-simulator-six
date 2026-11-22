@@ -80,6 +80,19 @@
 .ws-send[data-disabled] { background: #3b2f25; color: #6f604f; box-shadow: 0 0 0 2px var(--ws-ink), 0 4px 0 2px #2a2119; cursor: default; }
 .ws-send[data-pending] svg { animation: ws-nudge .5s steps(2, end) infinite; }
 .ws-send:focus-visible, .ws-action:focus-visible { outline: 2px solid var(--ws-text); outline-offset: 5px; }
+/* "Today I want to be a ___": the lead reads as plain text, the blank is darker and underlined so it is clearly
+   the part you type. The underline lights up while you are typing. */
+.ws-sentence { flex-wrap: wrap; align-items: baseline; column-gap: 14px; row-gap: 6px; }
+.ws-sentence-lead { flex: none; font-size: 30px; line-height: 40px; color: var(--ws-text); white-space: nowrap; }
+.ws-sentence .ws-blank {
+  flex: 1 1 180px; min-width: 160px; color: var(--ws-accent);
+  background-image: repeating-linear-gradient(90deg, var(--ws-edge) 0 8px, transparent 8px 12px);
+  background-size: 100% 3px; background-repeat: no-repeat; background-position: 0 100%;
+  padding-bottom: 4px;
+}
+.ws-sentence .ws-blank::placeholder { color: #6e5e4b; }
+.ws-sentence:focus-within .ws-blank { background-image: repeating-linear-gradient(90deg, var(--ws-accent) 0 8px, transparent 8px 12px); }
+.ws-sentence .ws-send { align-self: flex-end; margin-left: auto; }
 .ws-composer-error { margin: 0 6px; color: var(--ws-error); font-size: 20px; }
 
 /* Chat transcript (loading page) */
@@ -110,7 +123,7 @@
 
 @media (max-width: 520px) {
   .ws-composer-input { font-size: 24px; line-height: 34px; min-height: 34px; }
-  .ws-composer-caret { font-size: 24px; line-height: 34px; }
+  .ws-composer-caret, .ws-sentence-lead { font-size: 24px; line-height: 34px; }
   .ws-send { height: 34px; width: 40px; }
 }
 @media (prefers-reduced-motion: reduce) {

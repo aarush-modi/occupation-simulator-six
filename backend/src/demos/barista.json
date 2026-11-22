@@ -308,7 +308,7 @@
     "delaySec": 4,
     "announce": {
       "npc": "maya",
-      "text": "The main machine's group head just clogged! Grab the spare cup and use the backup machine."
+      "text": "Main group head's choked, it needs a backflush. Use the spare cup on the backup machine for now."
     },
     "close": "espresso",
     "replaceRemaining": [
@@ -454,6 +454,16 @@
       "id": "bar",
       "label": "Bar",
       "brief": "Grind, pull the shot and get it to the pickup counter."
+    }
+  ],
+  "queue": [
+    {
+      "name": "Priya",
+      "wants": "Oat flat white"
+    },
+    {
+      "name": "Marcus",
+      "wants": "Two americanos to go"
     }
   ]
 }

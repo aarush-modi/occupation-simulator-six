@@ -266,5 +266,15 @@
       "Long, sticky closing cleanups"
     ],
     "start": "You must be of legal serving age. Many start as barbacks. A responsible alcohol service certificate is often required."
-  }
+  },
+  "queue": [
+    {
+      "name": "Elena",
+      "wants": "A glass of house red"
+    },
+    {
+      "name": "Tom",
+      "wants": "Two pints of lager"
+    }
+  ]
 }

@@ -6,6 +6,8 @@ import { pickDemo } from './demos.js';
 import { RoomCrowd } from './npcs.js';
 import { capSpeech, cleanUtterance, conversationContext, HISTORY_TURNS, readReply, spokenMs, TALK_RANGE } from './dialogue.js';
 import { tryPlan } from './replan.js';
+import { castVoices, voiceFor } from './voices.js';
+import { arrangeLayout } from '../../frontend/src/shared/arrange.js';
 
 export const TICK_MS = 50; // 20 snapshots per second
 const IDLE_MS = 30 * 60 * 1000;
@@ -79,7 +81,7 @@ export class Room {
   }
 
   setBlueprint(blueprint, source) {
-    blueprint = withoutMiniGames(blueprint);
+    blueprint = arrangeLayout(withoutMiniGames(blueprint), this.deps.catalog); // a real workplace layout
     const now = Date.now();
     this.blueprint = blueprint;
     this.source = source;
@@ -109,7 +111,6 @@ export class Room {
     const lines = [];
     for (const npc of bp.npcs) {
       lines.push([npc.name, npc.lines?.intro], [npc.name, npc.lines?.done]);
-      for (const text of npc.lines?.ambient ?? []) lines.push([npc.name, text]);
     }
     for (const obj of [...(bp.objectives ?? []), ...(bp.event?.replaceRemaining ?? [])]) {
       if (obj.tip) lines.push([mentor?.name ?? 'Coach', obj.tip]);
@@ -119,16 +120,32 @@ export class Room {
     if (bp.order) lines.push([name(bp.order.npc), bp.order.waiting]);
     for (const [, text] of lines) if (text) this.speakable.add(text);
     this.mentorName = mentor?.name ?? 'Coach';
+    // One voice per person for the whole shift, all different, so nobody changes voice between lines.
+    this.voiceCast = castVoices([...(this.crowd?.speakers() ?? bp.npcs.map(npc => npc.name)), 'Coach']);
     this.warmTips(0);
     const first = bp.objectives?.[0];
-    if (first?.verb === 'talk') this.deps.voice?.warm(name(first.target), capSpeech(bp.npcs.find(npc => npc.id === first.target)?.lines?.intro ?? ''));
+    if (first?.verb === 'talk') this.warm(name(first.target), capSpeech(bp.npcs.find(npc => npc.id === first.target)?.lines?.intro ?? ''));
   }
 
   /** Prepare the mentor's tips for the step at `index` and the one after, which are about to be said. */
   warmTips(index) {
     for (const obj of (this.state?.objectives ?? this.blueprint?.objectives ?? []).slice(index, index + 2)) {
-      if (obj.tip) this.deps.voice?.warm(this.mentorName, obj.tip);
+      if (obj.tip) { this.speakable.add(obj.tip); this.warm(this.mentorName, obj.tip); } // replanned steps too
     }
+  }
+
+  /** This room's voice for a speaker (by name). */
+  voiceOf(who) {
+    return this.voiceCast?.get(who) ?? voiceFor(who);
+  }
+
+  warm(who, text) {
+    this.deps.voice?.warm(who, text, this.voiceOf(who));
+  }
+
+  /** Lines the voice endpoint may read: this shift's script, what NPCs said, and the tips of its current steps. */
+  canVoice(text) {
+    return this.speakable.has(text) || Boolean(this.state?.objectives?.some(o => o.tip === text));
   }
 
   npcName(id) {
@@ -147,7 +164,7 @@ export class Room {
       ev.text = capSpeech(ev.text);
       if (this.speakable.size > 3000) this.speakable.clear();
       this.speakable.add(ev.text);
-      this.deps.voice?.warm(this.npcName(ev.npc), ev.text);
+      this.warm(this.npcName(ev.npc), ev.text);
       const listener = ev.playerId ?? audience;
       if (listener && this.state?.players[listener]) this.crowd?.holdTalk(ev.npc, this.state.players[listener], listener, spokenMs(ev.text) + 1500);
     }

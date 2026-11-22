@@ -34,6 +34,10 @@ export const ANCHORS = {
   I2: { kind: 'island', pos: [2.6, 0, -1.4], rotY: 0 },
   I3: { kind: 'island', pos: [-2.6, 0, 1.6], rotY: 0 },
   I4: { kind: 'island', pos: [2.6, 0, 1.6], rotY: 0 },
+  // Front service counters: the same spots as I4 / I3, turned to face the back, so staff work them from behind and
+  // customers stand in front. Only the layout pass (arrange.js) uses them, and never together with that island.
+  C1: { kind: 'counter', pos: [2.6, 0, 1.6], rotY: r, island: 'I4' },
+  C2: { kind: 'counter', pos: [-2.6, 0, 1.6], rotY: r, island: 'I3' },
   // Built-in supply counters along the front wall, either side of the door. Top surface at y = 0.92.
   S1: { kind: 'surface', pos: [-6.0, 0.92, 4.75], rotY: r },
   S2: { kind: 'surface', pos: [-5.0, 0.92, 4.75], rotY: r },

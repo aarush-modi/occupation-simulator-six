@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { pickListener } from '../src/engine/listener.js';
+import { pickListener, MIC_RANGE } from '../src/engine/listener.js';
 
 // Player at the origin facing -z (yaw 0).
 const people = {
@@ -34,4 +34,14 @@ test('the NPC hearing their own voice is echo; the player talking over them is n
   assert.equal(isEcho('two flat whites extra hot', line), true);
   assert.equal(isEcho('wait, do we have oat milk', line), false);
   assert.equal(isEcho('', line), true);
+});
+
+test('the open mic only addresses someone close and in front', () => {
+  const people = { a: { id: 'a', pos: [0, 0, -2] }, b: { id: 'b', pos: [2, 0, 0] } };
+  const strict = { range: MIC_RANGE, minFacing: 0.55 };
+  // facing -z: a is ahead, b is to the side
+  assert.equal(pickListener({ people, pos: [0, 0, 0], yaw: 0, ...strict })?.id, 'a');
+  assert.equal(pickListener({ people, pos: [0, 0, 0], yaw: Math.PI, ...strict }), null, 'nobody in front');
+  assert.equal(pickListener({ people: { a: { id: 'a', pos: [0, 0, -3.2] } }, pos: [0, 0, 0], yaw: 0, ...strict }), null, 'too far for the mic');
+  assert.equal(pickListener({ people, pos: [0, 0, 0], yaw: Math.PI })?.id, 'b', 'typed lines still reach whoever is near');
 });

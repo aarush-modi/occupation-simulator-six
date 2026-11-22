@@ -5,7 +5,8 @@ export const HEAR_RANGE = 3.6; // metres; the server allows 4, the margin covers
  * Who hears the player: the NPC under the crosshair, else the nearest one in range, favouring whoever is in front.
  * `people` maps id -> { id, name, pos }. Returns that person or null.
  */
-export function pickListener({ focus, people, pos, yaw, range = HEAR_RANGE }) {
+export const MIC_RANGE = 2.6; // an open mic only addresses someone close and in front, not anyone in the room
+export function pickListener({ focus, people, pos, yaw, range = HEAR_RANGE, minFacing = -Infinity }) {
   const focused = focus?.kind === 'talk' ? people[focus.intent?.npc] : null;
   if (focused) return focused;
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
@@ -15,6 +16,7 @@ export function pickListener({ focus, people, pos, yaw, range = HEAR_RANGE }) {
     const dist = Math.hypot(dx, dz);
     if (dist > range) continue;
     const facing = dist > 1e-3 ? (dx * fx + dz * fz) / dist : 1;
+    if (facing < minFacing) continue;
     const score = dist - facing * 1.2;
     if (score < bestScore) { bestScore = score; best = person; }
   }

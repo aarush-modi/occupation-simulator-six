@@ -9,7 +9,7 @@ import { createRoom, applyIntent, tick, fits } from './sim.js';
 const SURFACES = Object.keys(ANCHORS).filter((id) => ANCHORS[id].kind === 'surface');
 const STATION_KINDS = ['station', 'furniture'];
 const DECOR_KINDS = ['decor', 'furniture'];
-const PLACE_KINDS = ['wall', 'island'];
+const PLACE_KINDS = ['wall', 'island', 'counter'];
 const listIds = (arr) => (arr?.length ? arr.map((x) => x.id).join(', ') : 'none');
 
 export function validateBlueprint(bp, catalog) {

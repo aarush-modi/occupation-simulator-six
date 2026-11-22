@@ -93,6 +93,7 @@ test('roles: the shift reviews once both roles finish', () => {
   assert.equal(r.step('ana').obj.id, 'bell_spare');
   assert.equal(r.step('ana').waiting, true);
   B({ t: 'grab', item: 'cup2' }); B({ t: 'place', item: 'cup2', target: 'backup.cup' }); B({ t: 'press', target: 'backup.brew' });
+  B({ t: 'grab', item: 'milk' }); B({ t: 'use', item: 'milk', target: 'backup.cup' }); B({ t: 'place', item: 'milk', target: 'S4' }); // pour, set the jug down
   B({ t: 'grab', item: 'cup2' }); B({ t: 'place', item: 'cup2', target: 'pickup.pickup' });
   assert.equal(r.step('ana').waiting, false);
   A({ t: 'press', target: 'pickup.bell' });

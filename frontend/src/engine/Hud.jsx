@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Textarea } from '@ui-sdk/react/textarea';
 import { useShift } from './store';
-import { createRoom } from './net';
+import { createRoom, localPose, sampleNpc } from './net';
 import { KIND_GESTURES, matchesObjective, gestureHint } from './world';
 import { playerStep, STANDING_START } from '../shared/sim.js';
 import WebcamPanel from '../game/webcam/WebcamPanel';
@@ -12,6 +12,7 @@ import { cam, GESTURE_HINT, onGesture } from '../game/webcam/gestures';
 import { BODY_GESTURE_HINT } from '../game/webcam/pose';
 import { startAudio } from '../game/audio';
 import { toggleMic, stopMic, voiceSupported, autoStartMic, speakTo } from './voice';
+import { workView } from './workView';
 
 // Kept for other screens that style themselves inline.
 export const ui = { font: 'var(--font-pixel), ui-monospace, monospace', accent: '#f2b233' };
@@ -55,6 +56,23 @@ function SparringPanel({ bp, game }) {
   );
 }
 
+/** Where the current step happens, in plain words: the station, the counter something sits on, or who to talk to. */
+export function whereText(bp, st, obj) {
+  if (!obj || !bp || !st) return null;
+  const station = (id) => bp.stations.find((s) => s.id === id)?.label;
+  const spot = (at) => {
+    if (!at) return null;
+    const [id] = String(at).split('.');
+    return String(at).includes('.') ? station(id) : /^S[1-8]$/.test(at) ? 'the supply counter by the door' : null;
+  };
+  if (obj.verb === 'talk') {
+    const npc = st.people?.[obj.target] ?? bp.npcs.find((n) => n.id === obj.target);
+    return npc ? `${npc.name}, ${String(npc.role).toLowerCase()}` : null;
+  }
+  if (obj.verb === 'grab') return spot(st.items?.[obj.target]?.at);
+  return spot(obj.target);
+}
+
 function TaskPanel() {
   useTick(500);
   const bp = useShift((s) => s.blueprint);
@@ -79,6 +97,7 @@ function TaskPanel() {
         <span className="ws-label">{challenge ? (challenge.status === 'waiting' ? '-' : remaining(challenge)) : `${Math.min(index, st.objectives.length)} / ${st.objectives.length}`}</span>
       </div>
       <div className="ws-task-title">{title}</div>
+      {cur && whereText(bp, st, cur) && <div className="ws-task-where">{cur.verb === 'talk' ? 'Talk to' : cur.verb === 'grab' ? 'From' : 'At'} {whereText(bp, st, cur)}</div>}
       {cur?.real && <div className="ws-task-real">{cur.real}</div>}
       {challenge && <div className="ws-task-real">Team {challenge.points} / {bp.game.goal}</div>}
       {typeof standing === 'number' && (
@@ -92,17 +111,23 @@ function TaskPanel() {
   );
 }
 
-// Says each step's tip when the step starts, once per step.
+// The mentor says each step's tip once, when they are close enough to be talking to the player; a mentor across the
+// room stays quiet rather than calling out of nowhere.
+const COACH_RANGE = 5.5;
 function Coach() {
+  useTick(500);
   const bp = useShift((s) => s.blueprint);
   const cur = useShift(myStep);
   const say = useShift((s) => s.say);
   const spoken = useRef(new Set());
+  const mentor = bp && mentorOf(bp);
+  const at = mentor && (sampleNpc(mentor.id) ?? useShift.getState().state?.people?.[mentor.id])?.pos;
+  const near = !mentor || (at && Math.hypot(at[0] - localPose.pos[0], at[2] - localPose.pos[2]) <= COACH_RANGE);
   useEffect(() => {
-    if (!cur?.tip || spoken.current.has(cur.id)) return;
+    if (!cur?.tip || !near || spoken.current.has(cur.id)) return;
     spoken.current.add(cur.id);
-    say(mentorOf(bp)?.name ?? 'Coach', cur.tip);
-  }, [bp, cur, say]);
+    say(mentor?.name ?? 'Coach', cur.tip);
+  }, [mentor, cur, near, say]);
   return null;
 }
 
@@ -167,6 +192,7 @@ function Prompt() {
         <div className="ws-card ws-aim">
           <span className="ws-aim-label">{label}</span>
           {hint && <span className="ws-aim-hint">{hint}</span>}
+          {workView.key && <span className="ws-aim-sub">Walk to step back</span>}
         </div>
       )}
     </>

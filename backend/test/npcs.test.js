@@ -3,8 +3,9 @@ import test from 'node:test';
 import { createNpcPlanner, playerStations, RoomCrowd } from '../src/npcs.js';
 import { Room } from '../src/rooms.js';
 import { CATALOG, blueprint } from './fixtures.js';
+import { ANCHORS } from '../../frontend/src/shared/layout.js';
 
-test('a generated room adds moving coworkers, shared snapshots and private proximity greetings', () => {
+test('a generated room adds moving coworkers and shared snapshots, and nobody talks unprompted', () => {
   const room = new Room('test', 'barista', { catalog: CATALOG, demos: [] });
   const messages = [];
   const client = { readyState: 1, send: text => messages.push(JSON.parse(text)) };
@@ -26,11 +27,10 @@ test('a generated room adds moving coworkers, shared snapshots and private proxi
     work ||= Object.values(snapshot.state.people).some(npc => npc.mode === 'work');
     lines.push(...messages.splice(0).flatMap(message => message.events ?? []).filter(event => event.type === 'say' && event.playerId === id));
   }
-  assert.ok(lines.length > 0, 'a nearby coworker spoke independently');
-  assert.equal(new Set(lines.map(line => line.npc)).size, lines.length, 'NPCs greet a player once');
+  assert.deepEqual(lines, [], 'NPCs only speak when spoken to or when the shift calls for it');
   assert.ok(work, 'a coworker reached a station');
   assert.notDeepEqual(room.snapshot().people.coworker.pos, initial.people.coworker.pos);
-  assert.equal(room.state.cur, 0, 'greetings leave talk task available');
+  assert.equal(room.state.cur, 0);
 });
 
 const geminiReply = (value) => Response.json({ status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: JSON.stringify(value) }] }] });
@@ -49,7 +49,7 @@ test('the smaller Gemini model directs NPCs with job-specific activities and the
     assert.equal(payload.player.current_task, calls === 1 ? 'Check in with Sam' : 'Grab a cup');
     return geminiReply({
       cast: [
-        { npc: 'mgr', station: calls === 1 ? 'main' : 'backup', action: 'prepare', activity: calls === 1 ? 'Dialing in the grinder' : 'Warming cups for your shot', line: 'Good morning. We are setting up for service.' },
+        { npc: 'mgr', station: calls === 1 ? 'main' : 'shelf', action: 'prepare', activity: calls === 1 ? 'Dialing in the grinder' : 'Warming cups for your shot', line: 'Good morning. We are setting up for service.' },
         { npc: 'coworker', station: 'missing', action: 'stock', activity: 'Nothing', line: 'I will use the missing station.' },
       ],
     });
@@ -80,9 +80,9 @@ test('the smaller Gemini model directs NPCs with job-specific activities and the
   for (let t = 7550; t < 16000; t += 50) {
     player.lastSeen = t;
     crowd.step(state, t);
-    if (crowd.snapshot().mgr.station === 'backup') break;
+    if (crowd.snapshot().mgr.station === 'shelf') break;
   }
-  assert.equal(crowd.snapshot().mgr.station, 'backup', 'the main machine is next for the player, so Sam works elsewhere');
+  assert.equal(crowd.snapshot().mgr.station, 'shelf', 'the main machine is next for the player, so Sam works elsewhere at their post');
   assert.equal(crowd.snapshot().mgr.activity, 'Warming cups for your shot', 'the activity label is the generated one');
 });
 
@@ -106,7 +106,6 @@ test('coworkers keep away from the stations the player needs next', () => {
     players: { p: { active: true, pos: [0, 0, 4.3], lastSeen: 0 } } };
   assert.deepEqual([...playerStations(state)], ['main']);
   const crowd = new RoomCrowd(bp, CATALOG, null);
-  crowd.actors.forEach(actor => actor.greeted.add('p'));
   // a coworker already working at the main machine leaves it
   crowd.actors[0].station = 'main'; crowd.actors[0].mode = 'work'; crowd.actors[0].until = Infinity;
   const visited = new Set();
@@ -125,19 +124,92 @@ test('a grab reserves the station the item sits in', () => {
   assert.deepEqual([...playerStations(state)].sort(), ['main', 'shelf']);
 });
 
-test('coworkers call out while they work, at most once every 20 s', () => {
+test('customers wait to be served and staff only work at their own post', () => {
   const bp = blueprint();
+  bp.npcs.push({ id: 'guest', name: 'Dev', role: 'Customer', anchor: 'P3', outfit: 'casual', lines: { intro: 'A flat white, please.' } });
   bp.npcs[0].lines.ambient = ['Behind!', 'Order up'];
+  bp.order = { npc: 'guest', text: 'A flat white', patienceSec: 120, waiting: 'Is my coffee coming?' };
   const state = { phase: 'play', closed: [], cur: 0, objectives: bp.objectives, items: {},
     players: { p: { active: true, pos: [6, 0, 4.3], lastSeen: 0 } } };
   const crowd = new RoomCrowd(bp, CATALOG, null);
-  crowd.actors.forEach(actor => actor.greeted.add('p'));
-  const calls = [];
-  for (let t = 0; t < 60000; t += 50) {
+  const start = crowd.snapshot().guest.pos;
+  assert.equal(crowd.snapshot().guest.kind, 'customer');
+  assert.equal(crowd.snapshot().mgr.kind, 'staff');
+  const said = [];
+  const visited = new Map();
+  for (let t = 0; t < 40000; t += 50) {
     state.players.p.lastSeen = t;
-    for (const event of crowd.step(state, t)) if (event.type === 'say') calls.push({ t, text: event.text });
+    said.push(...crowd.step(state, t).filter(event => event.type === 'say'));
+    for (const actor of crowd.actors) if (actor.station) visited.set(actor.id, new Set([...(visited.get(actor.id) ?? []), actor.station]));
   }
-  assert.ok(calls.length >= 2, `call-outs ${calls.length}`);
-  for (let i = 1; i < calls.length; i++) assert.ok(calls[i].t - calls[i - 1].t >= 20000);
-  assert.ok(calls.every(call => bp.npcs[0].lines.ambient.includes(call.text)));
+  const guest = crowd.snapshot().guest;
+  assert.deepEqual(guest.pos, start, 'the customer stays where they are');
+  assert.equal(guest.mode, 'idle');
+  assert.equal(guest.activity, 'Waiting for flat white');
+  assert.equal(visited.has('guest'), false, 'the customer never works a station');
+  assert.deepEqual(said, [], 'no call-outs or greetings out of nowhere');
+  assert.deepEqual([...visited.get('mgr')].every(id => crowd.actors[0].posts.includes(id)), true);
+  assert.equal(visited.size, 1, 'only the one staff member works');
+});
+
+test('client-facing shifts have a line that grows, and people who wait too long leave', () => {
+  const bp = blueprint();
+  bp.npcs.push({ id: 'guest', name: 'Dev', role: 'Customer', anchor: 'P1', outfit: 'casual', lines: { intro: 'A flat white, please.' } });
+  bp.order = { npc: 'guest', text: 'A flat white', patienceSec: 120, waiting: 'Is my coffee coming?' };
+  bp.queue = [{ name: 'Priya', wants: 'Oat flat white' }, { name: 'Marcus', wants: 'Two americanos' }];
+  const state = { phase: 'play', closed: [], cur: 0, objectives: bp.objectives, items: {},
+    players: { p: { active: true, pos: [4, 0, -1], lastSeen: 0 } } };
+  const crowd = new RoomCrowd(bp, CATALOG, null);
+  const people = () => crowd.snapshot();
+  assert.deepEqual(crowd.line.map(a => a.name), ['Priya', 'Marcus']);
+  const front = people().guest.pos;
+  const [first, second] = crowd.line.map(a => people()[a.id]);
+  assert.ok(Math.abs(first.pos[0] - front[0]) > 0.5 && Math.abs(second.pos[0] - front[0]) > Math.abs(first.pos[0] - front[0]), 'standing in a line beside the counter spot');
+  assert.ok([first, second].every(p => Math.abs(p.pos[2] - front[2]) < 0.3), 'one straight line');
+  assert.equal(first.kind, 'customer');
+  assert.equal(first.activity, 'Waiting to order: Oat flat white');
+  assert.ok(crowd.speakers().length > 4, 'later arrivals are cast voices up front');
+  let joined = 0, left = 0;
+  const seen = new Set(Object.keys(people()));
+  const T0 = 1.7e12; // a real clock: patience runs from when the shift starts, not from zero
+  state.players.p.lastSeen = T0;
+  crowd.step(state, T0);
+  assert.deepEqual(crowd.line.map(a => a.name), ['Priya', 'Marcus'], 'nobody leaves as soon as the shift starts');
+  for (let t = T0; t < T0 + 200000; t += 100) {
+    state.players.p.lastSeen = t;
+    crowd.step(state, t);
+    for (const id of Object.keys(people())) if (!seen.has(id)) { seen.add(id); joined++; }
+    left = [...seen].filter(id => !people()[id]).length;
+  }
+  assert.ok(joined >= 2, `new customers arrived (${joined})`);
+  assert.ok(left >= 1, 'someone gave up and walked out');
+  assert.ok(crowd.line.length <= 4);
+  assert.ok(people().guest, 'the order customer stays until served');
+  crowd.line.forEach((a, i) => assert.ok(Math.hypot(a.pos[0] - crowd.lineSpots[i][0], a.pos[2] - crowd.lineSpots[i][2]) < 0.05, 'everyone shuffled up to their place'));
+});
+
+test('customers keep to the public floor: never behind counters, among the machines or in the back', () => {
+  const bp = blueprint();
+  // A generated spot in the middle of the work area must not put a customer there.
+  bp.npcs.push({ id: 'guest', name: 'Dev', role: 'Customer', anchor: 'P2', outfit: 'casual', lines: { intro: 'Hi.' } });
+  bp.npcs.push({ id: 'pat', name: 'Kim', role: 'Patient', anchor: 'P3', outfit: 'casual', lines: { intro: 'Hello.' } });
+  bp.order = { npc: 'guest', text: 'A flat white', patienceSec: 120, waiting: 'Still waiting.' };
+  bp.queue = [{ name: 'Priya', wants: 'Oat flat white' }, { name: 'Marcus', wants: 'Two americanos' }, { name: 'Ana', wants: 'Tea' }];
+  const crowd = new RoomCrowd(bp, CATALOG, null);
+  const line = crowd.publicZ;
+  assert.ok(line >= 2.7, `public floor starts at z ${line}`);
+  const state = { phase: 'play', closed: [], cur: 0, objectives: bp.objectives, items: {},
+    players: { p: { active: true, pos: [4, 0, -1], lastSeen: 0 } } };
+  const T0 = 1.7e12;
+  let lowest = Infinity;
+  for (let t = T0; t < T0 + 260000; t += 100) {
+    state.players.p.lastSeen = t;
+    crowd.step(state, t);
+    for (const actor of crowd.actors) if (actor.kind === 'customer') lowest = Math.min(lowest, actor.pos[2]);
+  }
+  assert.ok(lowest >= line - 1e-9, `a customer went to z ${lowest.toFixed(2)}, behind the public line at ${line}`);
+  assert.ok(crowd.actors.some(a => a.kind === 'staff' && a.pos[2] < line), 'staff still work the back');
+  // The customer stands in front of the pickup shelf, the venue's service point.
+  const shelf = ANCHORS.I2.pos;
+  assert.ok(Math.abs(crowd.snapshot().guest.pos[0] - shelf[0]) < 1.2, 'at the service counter');
 });

@@ -15,13 +15,14 @@ import { footstep } from '../game/audio';
 import { cam, onGesture, webcamPace } from '../game/webcam/gestures';
 import { clampToArena } from '../shared/gameRules';
 import { talkLock, updateTalkLock, yawToFace } from './talkLock';
+import { updateWorkView, isMachineWork, WORK_FOV } from './workView';
 
 export const EYE = 1.62;
 const RADIUS = 0.3;
 const REACH = 2.4;
 const BODY_REACH = 4.2; // full-body webcam: aim by body heading, so reach further
 const BODY_SPEED = 1.8; // full-body webcam: m/s at full arm-swing cadence (cam.forward = 1)
-const tmpV = new THREE.Vector3(), fwdV = new THREE.Vector3();
+const tmpV = new THREE.Vector3(), fwdV = new THREE.Vector3(), tmpEye = new THREE.Vector3();
 
 export function collide(p, colliders) {
   p.x = THREE.MathUtils.clamp(p.x, BOUNDS.minX + RADIUS, BOUNDS.maxX - RADIUS);
@@ -62,6 +63,8 @@ export default function LocalPlayer({ colliders }) {
   const stepAcc = useRef(0);
   const strike = useRef({ time: -Infinity, side: 'right' });
   const assist = useRef(null); // full-body webcam aim-assist target [x, y, z]
+  const zoom = useRef({ blend: 0, target: null, fov: null }); // machine close-up (workView.js)
+  const camPos = useMemo(() => new THREE.Vector3(), []);
   const arena = useShift((s) => s.blueprint?.game?.arena);
 
   const key = useShift(interactKey);
@@ -129,10 +132,23 @@ export default function LocalPlayer({ colliders }) {
       if (updateTalkLock({ speaking, distance }) && !frozen) facing = p.pos;
     }
     const guard = Boolean(arena && cam.enabled && cam.guard);
-    const pace = frozen || guard || facing ? 0 : webcamPace();
     const held = s.state?.players?.[s.you]?.held ?? null;
     const camOn = cam.enabled && cam.calibrated;
     const bodyMode = camOn && cam.mode === 'body';
+    const wantPace = frozen ? 0 : webcamPace();
+    // Working a machine: lean in to the part the step needs. Trying to walk steps back out.
+    let work = null;
+    if (!frozen && !facing && !arena) {
+      const obj = myObjective(s.state, s.you);
+      const need = obj ? staticsRef.current.find((it) => isMachineWork(it) && matchesObjective(obj, it)) : null;
+      const st = need && getIndex()?.stations[need.station];
+      work = updateWorkView({
+        it: need, stepId: obj?.id, frame: st?.frame, depth: st?.recipe?.size?.[2],
+        distance: need ? Math.hypot(need.pos[0] - pos.current.x, need.pos[2] - pos.current.z) : null,
+        walking: wantPace > 0 || (bodyMode && cam.forward > 0.3),
+      });
+    } else updateWorkView({ it: null });
+    const pace = guard || facing || work ? 0 : wantPace;
     if (facing) {
       const dx = facing[0] - pos.current.x, dz = facing[2] - pos.current.z;
       let d = yawToFace([pos.current.x, 0, pos.current.z], facing) - yaw.current;
@@ -140,6 +156,15 @@ export default function LocalPlayer({ colliders }) {
       while (d < -Math.PI) d += Math.PI * 2;
       yaw.current += d * Math.min(1, dt * 6);
       pitch.current = THREE.MathUtils.damp(pitch.current, Math.atan2(1.55 - EYE, Math.max(0.3, Math.hypot(dx, dz))), 6, dt);
+    } else if (work) {
+      // Aim from where the camera is now (it glides in), so the part stays centred the whole way.
+      const from = camPos.set(pos.current.x, EYE, pos.current.z).lerp(tmpEye.fromArray(work.eye), zoom.current.blend);
+      let d = yawToFace([from.x, 0, from.z], work.look) - yaw.current;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      yaw.current += d * Math.min(1, dt * 7);
+      const hd = Math.max(0.15, Math.hypot(work.look[0] - from.x, work.look[2] - from.z));
+      pitch.current = THREE.MathUtils.damp(pitch.current, Math.atan2(work.look[1] - from.y, hd), 7, dt);
     } else if (!frozen && camOn) {
       yaw.current += cam.turn * dt;
       // Full-body aim assist: there is no head pitch, so tilt the view toward the focused thing. When the player
@@ -157,7 +182,7 @@ export default function LocalPlayer({ colliders }) {
         }
       } else pitch.current = THREE.MathUtils.damp(pitch.current, cam.pitch, 5, dt);
     }
-    const speedTarget = bodyMode ? (frozen || guard || facing ? 0 : cam.forward * BODY_SPEED) : pace === 2 ? 3.85 : pace === 1 ? 1.75 : 0;
+    const speedTarget = bodyMode ? (frozen || guard || facing || work ? 0 : cam.forward * BODY_SPEED) : pace === 2 ? 3.85 : pace === 1 ? 1.75 : 0;
     const f = tmpV.set(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
     vel.current.x = THREE.MathUtils.damp(vel.current.x, f.x * speedTarget, pace ? 9 : 17, dt);
     vel.current.z = THREE.MathUtils.damp(vel.current.z, f.z * speedTarget, pace ? 9 : 17, dt);
@@ -169,8 +194,16 @@ export default function LocalPlayer({ colliders }) {
     stepAcc.current += Math.hypot(pos.current.x - xBefore, pos.current.z - zBefore);
     const stride = pace === 2 ? 1.10 : 0.73;
     if (stepAcc.current >= stride) { stepAcc.current -= stride; footstep(); }
+    const z = zoom.current;
+    if (work) z.target = work;
+    z.blend = THREE.MathUtils.damp(z.blend, work ? 1 : 0, work ? 4.5 : 6, dt);
+    if (z.blend < 0.002) { z.blend = 0; z.target = null; }
     camera.position.set(pos.current.x, EYE, pos.current.z);
+    if (z.target) camera.position.lerp(tmpEye.fromArray(z.target.eye), z.blend);
     camera.rotation.set(pitch.current, yaw.current, 0);
+    z.fov ??= camera.fov;
+    const fov = THREE.MathUtils.lerp(z.fov, WORK_FOV, z.blend);
+    if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
 
     localPose.pos[0] = pos.current.x; localPose.pos[1] = 0; localPose.pos[2] = pos.current.z;
     localPose.yaw = yaw.current; localPose.pitch = pitch.current;

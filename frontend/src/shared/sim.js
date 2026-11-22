@@ -400,9 +400,20 @@ function grab(s, ctx, playerId, p, intent, now, events) {
   if (!it) return deny(events, playerId, `no item ${id}`);
   if (it.holder === playerId) return;
   if (it.holder) return deny(events, playerId, 'held by someone else');
-  if (p.held) return deny(events, playerId, 'hands full');
   const st = stationOfLocation(it.at);
   if (st && s.closed.includes(st)) return deny(events, playerId, 'closed');
+  // Picking up the next thing sets down what is in hand, back where it came from (or on a free counter spot), so a
+  // shift never needs "put the tool away" steps. Only counter surfaces are used, so no machine slot fills up.
+  if (p.held) {
+    const prev = s.items[p.held];
+    const home = ctx.items.get(p.held)?.anchor;
+    const spot = home && SURFACES.includes(home) && isFree(s, home) ? home : SURFACES.find((sp) => isFree(s, sp));
+    if (!prev || !spot) return deny(events, playerId, 'hands full');
+    prev.holder = null;
+    prev.at = spot;
+    events.push({ type: 'placed', playerId, item: p.held, target: spot, auto: true });
+    p.held = null;
+  }
   it.holder = playerId;
   it.at = null;
   p.held = id;
