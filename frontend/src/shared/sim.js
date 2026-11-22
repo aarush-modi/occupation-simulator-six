@@ -75,7 +75,57 @@ export function createRoom(blueprint, catalog, now = Date.now()) {
     score: { startedAt: now, finishedAt: null, skills: {} },
   };
   Object.defineProperty(state, CTX, { value: ctx, enumerable: false });
+  refresh(state, ctx);
   return state;
+}
+
+// ---------- roles and lanes ----------
+// A shift may split its steps into roles (e.g. register and bar). Each player has one role. A player's lane is
+// their own role plus every role nobody holds, so a solo player works every step in list order (as before roles
+// existed). A player's current step is the first unfinished step in their lane. It waits while the step named by
+// its `after` is unfinished (that step usually belongs to the other role: a handoff).
+
+function roleIds(ctx) {
+  return (ctx.bp.roles ?? []).map((r) => r.id);
+}
+
+function laneOf(state, ctx, playerId) {
+  const roles = roleIds(ctx);
+  if (!roles.length) return null; // no roles: every step is everyone's
+  const held = new Set(Object.values(state.players).map((p) => p.role).filter(Boolean));
+  const mine = state.players[playerId]?.role;
+  return new Set(roles.filter((r) => r === mine || !held.has(r)));
+}
+
+const inLane = (lane, o) => !lane || !o.role || lane.has(o.role);
+
+/** Recompute the global first-unfinished index and each player's lane, current step and waiting flag. */
+function refresh(state, ctx) {
+  const done = new Set(state.done);
+  const first = state.objectives.findIndex((o) => !done.has(o.id));
+  state.cur = first < 0 ? state.objectives.length : first;
+  for (const [id, p] of Object.entries(state.players)) {
+    const lane = laneOf(state, ctx, id);
+    p.lane = lane ? [...lane] : null;
+    const i = state.objectives.findIndex((o) => !done.has(o.id) && inLane(lane, o));
+    p.step = i < 0 ? null : i;
+    const o = i < 0 ? null : state.objectives[i];
+    p.waiting = Boolean(o?.after && !done.has(o.after) && state.objectives.some((x) => x.id === o.after));
+  }
+}
+
+/** The step a player can act on now (not waiting), or null. */
+function actionableStep(state, playerId) {
+  const p = state.players[playerId];
+  return p && p.step !== null && p.step !== undefined && !p.waiting ? p.step : null;
+}
+
+/** The role new players take: the one held by the fewest players, in blueprint order. */
+function nextRole(state, ctx) {
+  const roles = roleIds(ctx);
+  if (!roles.length) return undefined;
+  const count = (r) => Object.values(state.players).filter((p) => p.role === r).length;
+  return roles.reduce((best, r) => (count(r) < count(best) ? r : best), roles[0]);
 }
 
 // ---------- helpers ----------
@@ -115,7 +165,7 @@ function deny(events, playerId, reason) {
 
 function maybeReview(state, ctx, now, events) {
   if (state.phase !== 'play' || ctx.bp.game?.kind === 'sparring') return;
-  if (state.cur < state.objectives.length) return;
+  if (state.done.length < state.objectives.length) return;
   const pending = ctx.event && state.event.at !== null && !state.event.fired;
   if (pending) return;
   if (ctx.bp.game?.kind === 'challenge') return finishChallenge(state, ctx.bp.game, now, events);
@@ -126,10 +176,10 @@ function maybeReview(state, ctx, now, events) {
   events.push({ type: 'review' });
 }
 
-function completeCurrent(state, ctx, skillScore, now, events) {
-  const obj = state.objectives[state.cur];
+function completeStep(state, ctx, index, skillScore, now, events) {
+  const obj = state.objectives[index];
   state.done.push(obj.id);
-  state.cur += 1;
+  refresh(state, ctx);
   state.score.skills[obj.id] = isNum(skillScore) ? clamp(skillScore, 0, 1) : 1;
   events.push({ type: 'objective', id: obj.id });
   if (obj.say) events.push({ type: 'say', npc: obj.say.npc, text: obj.say.text });
@@ -140,23 +190,36 @@ function completeCurrent(state, ctx, skillScore, now, events) {
   settle(state, ctx, now, events);
 }
 
-/** Auto-complete current objectives that the world already satisfies (e.g. "grab X" while X is held). */
+/**
+ * Auto-complete steps the world already satisfies: "grab X" while X is held by someone working that step's lane,
+ * "place X at T" while X sits at T. With no players yet, the global first step is checked.
+ */
 function settle(state, ctx, now, events) {
-  const obj = state.phase === 'play' ? state.objectives[state.cur] : null;
-  if (obj) {
-    const it = state.items[obj.verb === 'grab' ? obj.target : obj.item];
-    const satisfied =
-      (obj.verb === 'grab' && it && it.holder) ||
-      (obj.verb === 'place' && it && !it.holder && it.at === obj.target);
-    if (satisfied) return completeCurrent(state, ctx, undefined, now, events); // settles again, recursively
+  refresh(state, ctx);
+  if (state.phase === 'play') {
+    const ids = Object.keys(state.players);
+    const candidates = ids.length ? ids.map((id) => [id, actionableStep(state, id)]) : [[null, state.cur]];
+    for (const [id, index] of candidates) {
+      const obj = index === null ? null : state.objectives[index];
+      if (!obj) continue;
+      const it = state.items[obj.verb === 'grab' ? obj.target : obj.item];
+      const holderLane = it?.holder ? laneOf(state, ctx, it.holder) : null;
+      const satisfied =
+        (obj.verb === 'grab' && it && it.holder && (!id || it.holder === id || inLane(holderLane, obj))) ||
+        (obj.verb === 'place' && it && !it.holder && it.at === obj.target);
+      if (satisfied) return completeStep(state, ctx, index, undefined, now, events); // settles again, recursively
+    }
   }
   maybeReview(state, ctx, now, events);
 }
 
-function progress(state, ctx, match, skillScore, now, events) {
+/** Complete the acting player's current step when the action matches it. */
+function progress(state, ctx, playerId, match, skillScore, now, events) {
   if (state.phase !== 'play') return;
-  const obj = state.objectives[state.cur];
-  if (obj && match(obj)) completeCurrent(state, ctx, skillScore, now, events);
+  refresh(state, ctx);
+  const index = actionableStep(state, playerId);
+  const obj = index === null ? null : state.objectives[index];
+  if (obj && match(obj)) completeStep(state, ctx, index, skillScore, now, events);
 }
 
 /** Put a released item back where it spawned, else on any free surface, else nowhere (it stays grabbable). */
@@ -234,6 +297,7 @@ export function applyIntent(state, playerId, intent, now = Date.now()) {
         release(s, ctx, playerId, events);
         delete s.players[playerId];
         events.push({ type: 'left', playerId });
+        settle(s, ctx, now, events); // their role's steps fall to the others
         break;
       default:
         deny(events, playerId, `unknown intent ${String(t)}`);
@@ -258,6 +322,7 @@ function join(s, playerId, intent, now, events, rules) {
     return;
   }
   const idx = Object.keys(s.players).length;
+  const role = nextRole(s, ctxOf(s));
   const offsets = [0, 0.8, -0.8, 1.6];
   s.players[playerId] = {
     name,
@@ -266,7 +331,9 @@ function join(s, playerId, intent, now, events, rules) {
     pitch: 0,
     held: null,
     lastSeen: now,
+    ...(role ? { role } : {}),
   };
+  refresh(s, ctxOf(s));
   events.push({ type: 'joined', playerId, name });
 }
 
@@ -295,7 +362,7 @@ function grab(s, ctx, playerId, p, intent, now, events) {
   p.held = id;
   if (intent.hand === 'left' || intent.hand === 'right') p.holdHand = intent.hand;
   events.push({ type: 'grabbed', playerId, item: id });
-  progress(s, ctx, (o) => o.verb === 'grab' && o.target === id, intent.skillScore, now, events);
+  progress(s, ctx, playerId, (o) => o.verb === 'grab' && o.target === id, intent.skillScore, now, events);
 }
 
 function place(s, ctx, playerId, p, intent, now, events) {
@@ -320,7 +387,7 @@ function place(s, ctx, playerId, p, intent, now, events) {
   p.held = null;
   delete p.holdHand;
   events.push({ type: 'placed', playerId, item: id, target });
-  progress(s, ctx, (o) => o.verb === 'place' && o.target === target && (!o.item || o.item === id), intent.skillScore, now, events);
+  progress(s, ctx, playerId, (o) => o.verb === 'place' && o.target === target && (!o.item || o.item === id), intent.skillScore, now, events);
 }
 
 function press(s, ctx, playerId, intent, now, events) {
@@ -339,16 +406,18 @@ function press(s, ctx, playerId, intent, now, events) {
   }
   if (ctrl.sets && first && !s.items[first].tags.includes(ctrl.sets)) s.items[first].tags.push(ctrl.sets);
   events.push({ type: 'pressed', playerId, target, ...(ctrl.sets && first ? { item: first, sets: ctrl.sets } : {}) });
-  progress(s, ctx, (o) => o.verb === 'press' && o.target === target, intent.skillScore, now, events);
+  progress(s, ctx, playerId, (o) => o.verb === 'press' && o.target === target, intent.skillScore, now, events);
 }
 
 function talk(s, ctx, playerId, intent, now, events) {
   const npc = ctx.npcs.get(intent.npc);
   if (!npc) return deny(events, playerId, `no npc ${intent.npc}`);
-  const obj = s.objectives[s.cur];
+  refresh(s, ctx);
+  const index = actionableStep(s, playerId);
+  const obj = index === null ? null : s.objectives[index];
   if (obj && obj.verb === 'talk' && obj.target === npc.id) {
     if (!obj.say) events.push({ type: 'say', npc: npc.id, text: npc.lines?.intro ?? obj.label });
-    progress(s, ctx, (o) => o === obj, intent.skillScore, now, events);
+    progress(s, ctx, playerId, (o) => o === obj, intent.skillScore, now, events);
     return;
   }
   // Not a talk step: the NPC points the player at the current task.
@@ -367,7 +436,9 @@ function handoff(s, ctx, playerId, p, intent, now, events) {
   q.held = id;
   s.items[id].holder = to;
   events.push({ type: 'handoff', from: playerId, to, item: id });
-  // A grab step for this item stays satisfied; nothing else to progress.
+  // Handing the item over passes it on, so it counts for the giver's step that puts this item down.
+  progress(s, ctx, playerId, (o) => o.verb === 'place' && o.item === id, intent.skillScore, now, events);
+  settle(s, ctx, now, events); // the taker's "grab it" step
 }
 
 // ---------- tick ----------
@@ -391,6 +462,7 @@ export function tick(state, now = Date.now(), { rivalStation } = {}) {
       if (age > DROP_MS) {
         delete w().players[id];
         events.push({ type: 'left', playerId: id });
+        settle(w(), ctx, now, events); // their role's steps fall to the others
       }
     }
     if (ctx.bp.game && state.phase === 'play') tickGeneratedGame(w(), ctx.bp.game, now, events, rivalStation);
@@ -411,16 +483,29 @@ function fireEvent(s, ctx, now, events) {
   const keep = afterIdx >= 0 ? afterIdx + 1 : s.cur;
   const kept = s.objectives.slice(0, keep);
   s.objectives = kept.concat(JSON.parse(JSON.stringify(ev.replaceRemaining ?? [])));
-  s.cur = Math.min(s.cur, keep);
   const keptIds = new Set(kept.map((o) => o.id));
   s.done = s.done.filter((id) => keptIds.has(id));
+  refresh(s, ctx);
   for (const id of Object.keys(s.score.skills)) if (!keptIds.has(id)) delete s.score.skills[id];
   scoreTask(s, ctx.bp.game, now, events);
   // Items held inside the closed station stay there; the validator proves the revised task never needs them.
   settle(s, ctx, now, events);
 }
 
-/** The objective the players are currently on, or null. */
+/** The first unfinished objective of the whole shift, or null. */
 export function currentObjective(state) {
   return state.objectives[state.cur] ?? null;
+}
+
+/**
+ * A player's own step from a (plain) snapshot: { obj, index, waiting, waitingOn } or null when their lane is done.
+ * Falls back to the global step for states without per-player steps.
+ */
+export function playerStep(state, playerId) {
+  const p = state?.players?.[playerId];
+  const index = p && 'step' in p ? p.step : state?.cur;
+  const obj = index === null || index === undefined ? null : state.objectives[index] ?? null;
+  if (!obj) return null;
+  const waiting = Boolean(p?.waiting);
+  return { obj, index, waiting, waitingOn: waiting ? state.objectives.find((o) => o.id === obj.after) ?? null : null };
 }

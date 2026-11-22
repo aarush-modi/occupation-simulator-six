@@ -8,7 +8,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useShift } from './store';
 import { localPose, reconcile, samplePlayer, sampleNpc, send } from './net';
 import { use, getIndex, lastGrabAt } from './actions';
-import { staticInteractables, matchesObjective, KIND_GESTURES, anchorFrame, BOUNDS } from './world';
+import { staticInteractables, matchesObjective, KIND_GESTURES, anchorFrame, BOUNDS, myObjective } from './world';
 import TrackedHands from './TrackedHands';
 import { carryingNeeded, mayRelease } from './carry';
 import { footstep } from '../game/audio';
@@ -99,7 +99,7 @@ export default function LocalPlayer({ colliders }) {
     const releasing = f.kind === 'place' || f.kind === 'handoff';
     const now = performance.now();
     const moving = cam.enabled && (webcamPace(now) > 0 || cam.forward > 0.05 || Math.abs(cam.turn) > 0.2);
-    if (releasing && !mayRelease({ it: f, matches: matchesObjective(s.state.objectives[s.state.cur], f), state: s.state, you: s.you, now, grabAt: lastGrabAt, moving })) return;
+    if (releasing && !mayRelease({ it: f, matches: matchesObjective(myObjective(s.state, s.you), f), state: s.state, you: s.you, now, grabAt: lastGrabAt, moving })) return;
     use(f, releasing ? s.state.players[s.you]?.holdHand ?? 'right' : side);
   }), []);
 
@@ -163,7 +163,7 @@ export default function LocalPlayer({ colliders }) {
     let best = null, bestScore = -Infinity;
     if (!frozen && !arena) {
       camera.getWorldDirection(fwdV);
-      const obj = s.state?.objectives?.[s.state.cur];
+      const obj = myObjective(s.state, s.you);
       const hfx = -Math.sin(yaw.current), hfz = -Math.cos(yaw.current);
       const needed = carryingNeeded(s.state, s.you);
       const consider = (it) => {

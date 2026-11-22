@@ -115,12 +115,22 @@
   ],
   "objectives": [
     {
+      "id": "take_order",
+      "verb": "talk",
+      "target": "leo",
+      "label": "Take Leo's order",
+      "skill": "none",
+      "tip": "Repeat the order back so nothing gets lost between register and bar.",
+      "role": "register"
+    },
+    {
       "id": "checkin",
       "verb": "talk",
       "target": "maya",
       "label": "Check in with Maya",
       "skill": "none",
-      "tip": "Check the queue with your lead before you start, so you know what is coming."
+      "tip": "Check the queue with your lead before you start, so you know what is coming.",
+      "role": "bar"
     },
     {
       "id": "grab_beans",
@@ -128,7 +138,8 @@
       "target": "beans",
       "label": "Grab the bag of beans",
       "skill": "none",
-      "tip": "Fresh beans, used within a few weeks of roasting, give the best flavour."
+      "tip": "Fresh beans, used within a few weeks of roasting, give the best flavour.",
+      "role": "bar"
     },
     {
       "id": "load_beans",
@@ -137,7 +148,8 @@
       "item": "beans",
       "label": "Load the beans into the grinder",
       "skill": "steady",
-      "tip": "Fill the hopper part way so the beans stay fresh."
+      "tip": "Fill the hopper part way so the beans stay fresh.",
+      "role": "bar"
     },
     {
       "id": "grind",
@@ -149,15 +161,65 @@
         "npc": "maya",
         "text": "Smell that? Fresh grounds for every shot."
       },
-      "tip": "Grind just before brewing, about as fine as table salt for espresso."
+      "tip": "Grind just before brewing, about as fine as table salt for espresso.",
+      "role": "bar"
     },
     {
       "id": "grab_cup",
       "verb": "grab",
       "target": "cup",
-      "label": "Grab a cup",
+      "label": "Grab a cup for Leo's order",
       "skill": "none",
-      "tip": "A warm cup keeps the espresso hot, so take one from the cup warmer."
+      "tip": "A warm cup keeps the espresso hot, so take one from the cup warmer.",
+      "role": "register"
+    },
+    {
+      "id": "pass_cup",
+      "verb": "place",
+      "target": "S5",
+      "label": "Pass the cup to the bar",
+      "skill": "steady",
+      "tip": "Line cups up in order on the hand-off so the bar makes drinks first come, first served.",
+      "role": "register",
+      "item": "cup"
+    },
+    {
+      "id": "grab_milk",
+      "verb": "grab",
+      "target": "milk",
+      "label": "Grab the milk jug",
+      "skill": "none",
+      "tip": "Use cold milk straight from the fridge. It steams smoother and gives you more time.",
+      "role": "register"
+    },
+    {
+      "id": "load_milk",
+      "verb": "place",
+      "target": "steamer.jug",
+      "label": "Set the jug on the steamer",
+      "skill": "steady",
+      "tip": "Fill the jug only to the bottom of the spout so the milk has room to stretch.",
+      "role": "register",
+      "item": "milk"
+    },
+    {
+      "id": "steam_milk",
+      "verb": "press",
+      "target": "steamer.steam",
+      "label": "Steam milk for the next order",
+      "skill": "hold",
+      "tip": "Stop at about 60-65 C, too hot to hold the jug for long. Hotter scalds the milk.",
+      "role": "register"
+    },
+    {
+      "id": "take_cup_bar",
+      "verb": "grab",
+      "target": "cup",
+      "label": "Take the cup from the hand-off",
+      "skill": "none",
+      "tip": "Check the order on the cup before you start the shot.",
+      "role": "bar",
+      "after": "pass_cup"
     },
     {
       "id": "seat_cup",
@@ -166,7 +228,8 @@
       "item": "cup",
       "label": "Seat the cup under the main machine",
       "skill": "steady",
-      "tip": "Centre the cup under both spouts so the shot pours evenly."
+      "tip": "Centre the cup under both spouts so the shot pours evenly.",
+      "role": "bar"
     },
     {
       "id": "brew",
@@ -178,7 +241,8 @@
         "npc": "maya",
         "text": "Nice crema. About 25 seconds is right."
       },
-      "tip": "Aim for 25 to 30 seconds. Fast shots taste sour, slow ones bitter."
+      "tip": "Aim for 25 to 30 seconds. Fast shots taste sour, slow ones bitter.",
+      "role": "bar"
     },
     {
       "id": "take_cup",
@@ -186,7 +250,8 @@
       "target": "cup",
       "label": "Take the espresso",
       "skill": "none",
-      "tip": "Serve it within a minute, before the crema fades."
+      "tip": "Serve it within a minute, before the crema fades.",
+      "role": "bar"
     },
     {
       "id": "serve",
@@ -195,7 +260,8 @@
       "item": "cup",
       "label": "Set the espresso on the pickup counter",
       "skill": "steady",
-      "tip": "Set it down with the handle turned toward the customer."
+      "tip": "Set it down with the handle turned toward the customer.",
+      "role": "bar"
     },
     {
       "id": "bell",
@@ -207,7 +273,9 @@
         "npc": "leo",
         "text": "That's mine, thanks!"
       },
-      "tip": "Call the drink and the name clearly so the right person takes it."
+      "tip": "Call the drink and the name clearly so the right person takes it.",
+      "role": "register",
+      "after": "serve"
     }
   ],
   "event": {
@@ -225,7 +293,8 @@
         "target": "cup2",
         "label": "Grab the spare cup",
         "skill": "none",
-        "tip": "In a rush you switch machines and keep the line moving."
+        "tip": "In a rush you switch machines and keep the line moving.",
+        "role": "bar"
       },
       {
         "id": "seat_spare",
@@ -234,7 +303,8 @@
         "item": "cup2",
         "label": "Seat the cup under the backup machine",
         "skill": "steady",
-        "tip": "Flush the backup group head first to clear out old coffee."
+        "tip": "Flush the backup group head first to clear out old coffee.",
+        "role": "bar"
       },
       {
         "id": "brew_backup",
@@ -246,7 +316,8 @@
           "npc": "maya",
           "text": "Good save. That's how a rush goes."
         },
-        "tip": "Watch the time again. Every machine pulls a little differently."
+        "tip": "Watch the time again. Every machine pulls a little differently.",
+        "role": "bar"
       },
       {
         "id": "take_spare",
@@ -254,7 +325,8 @@
         "target": "cup2",
         "label": "Take the espresso",
         "skill": "none",
-        "tip": "Check the crema. A good shot has a thick golden layer."
+        "tip": "Check the crema. A good shot has a thick golden layer.",
+        "role": "bar"
       },
       {
         "id": "serve_spare",
@@ -263,7 +335,8 @@
         "item": "cup2",
         "label": "Set the espresso on the pickup counter",
         "skill": "steady",
-        "tip": "Set it down with the handle turned toward the customer."
+        "tip": "Set it down with the handle turned toward the customer.",
+        "role": "bar"
       },
       {
         "id": "bell_spare",
@@ -275,7 +348,9 @@
           "npc": "leo",
           "text": "Worth the wait, thanks!"
         },
-        "tip": "Apologise briefly for the wait. Regulars remember how you handle it."
+        "tip": "Apologise briefly for the wait. Regulars remember how you handle it.",
+        "role": "register",
+        "after": "serve_spare"
       }
     ]
   },
@@ -318,5 +393,17 @@
       "Staying friendly with rude customers mid-rush"
     ],
     "start": "No degree needed. Most baristas learn on the job in a few weeks. Specialty cafes value courses such as the SCA Barista Foundation."
-  }
+  },
+  "roles": [
+    {
+      "id": "register",
+      "label": "Register",
+      "brief": "Take the order, start the cup, prep milk, and call it out when it is ready."
+    },
+    {
+      "id": "bar",
+      "label": "Bar",
+      "brief": "Grind, pull the shot and get it to the pickup counter."
+    }
+  ]
 }

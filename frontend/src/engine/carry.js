@@ -1,12 +1,13 @@
 // Rules for putting down a carried item with webcam gestures. The AI-generated plan (state.objectives) says where
 // the item in hand goes next, so walking arm swings and stray reaches near other spots do not drop it.
+import { playerStep } from '../shared/sim.js';
 
 export const CARRY_GRACE_MS = 1500; // no put-down gesture this soon after a grab
 
 /** The item in hand is one the current objective needs. */
 export function carryingNeeded(state, you) {
   const held = state?.players?.[you]?.held;
-  const obj = state?.objectives?.[state.cur];
+  const obj = state ? playerStep(state, you)?.obj : null;
   return Boolean(held && obj && (obj.item === held || (obj.verb !== 'grab' && obj.target === held)));
 }
 

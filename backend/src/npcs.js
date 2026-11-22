@@ -61,7 +61,10 @@ function makeFloor(blueprint, catalog) {
 // stays clear. A grab counts at the station the item is sitting in.
 export function playerStations(state) {
   const reserved = new Set();
-  for (const obj of (state.objectives ?? []).slice(state.cur, state.cur + 2)) {
+  // Each player's own step (roles split the work) and the step after it, else the shift's first unfinished steps.
+  const starts = Object.values(state.players ?? {}).map(p => p.step).filter(i => Number.isInteger(i));
+  const near = (starts.length ? starts : [state.cur]).flatMap(i => (state.objectives ?? []).slice(i, i + 2));
+  for (const obj of near) {
     const at = obj.verb === 'grab' ? state.items?.[obj.target]?.at : obj.verb === 'place' || obj.verb === 'press' ? obj.target : null;
     if (typeof at === 'string' && at.includes('.')) reserved.add(at.slice(0, at.indexOf('.')));
   }

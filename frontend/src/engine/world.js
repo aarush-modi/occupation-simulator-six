@@ -1,6 +1,7 @@
 // Pure world math for a blueprint: where every station, slot, control, item and NPC is in world space,
 // and which things the local player can interact with right now. No React, no three.
 import { ANCHORS, ROOM } from '../shared/layout.js';
+import { playerStep } from '../shared/sim.js';
 import { CATALOG } from '../shared/catalog/catalog.generated.js';
 
 import { backendUrl, BACKEND } from './config';
@@ -148,9 +149,15 @@ export function matchesObjective(obj, it) {
   return false;
 }
 
+/** The step this player can act on now (their role's current step), or null while it waits on a teammate. */
+export function myObjective(state, you) {
+  const step = state ? playerStep(state, you) : null;
+  return step && !step.waiting ? step.obj : null;
+}
+
 /** World point to mark for the current objective (falls back to the item when it still has to be fetched). */
 export function objectiveMarker(idx, state, you, itemPosOf) {
-  const obj = state?.objectives?.[state.cur];
+  const obj = myObjective(state, you);
   if (!obj || state.phase !== 'play') return null;
   const itemPos = (id) => {
     const it = state.items[id];

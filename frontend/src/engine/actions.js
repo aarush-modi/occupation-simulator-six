@@ -2,7 +2,7 @@
 // then the intent goes to the server, whose denial (if any) is shown as a toast.
 import { useShift } from './store';
 import { send, onDenied } from './net';
-import { indexBlueprint, matchesObjective, denialText, splitTarget } from './world';
+import { indexBlueprint, matchesObjective, denialText, splitTarget, myObjective } from './world';
 import { blip } from '../game/audio';
 
 let cachedBp = null, cachedIdx = null;
@@ -51,7 +51,7 @@ const SKILLS = {
 export function use(it, side) {
   const s = useShift.getState();
   if (!it || !s.state || s.state.phase !== 'play' || s.skill) return;
-  const obj = s.state.objectives[s.state.cur];
+  const obj = myObjective(s.state, s.you);
   const closed = it.station && s.state.closed.includes(it.station);
   const unmet = it.kind === 'press' && (it.requires ?? []).some((slot) => !Object.values(s.state.items).some((x) => x.at === `${it.station}.${slot}` && !x.holder));
   // Skill check only when this action would actually complete the objective; otherwise let the server explain.

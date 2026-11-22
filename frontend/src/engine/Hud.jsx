@@ -6,6 +6,7 @@ import { useShift } from './store';
 import { closeSkill } from './actions';
 import { createRoom } from './net';
 import { KIND_GESTURES } from './world';
+import { playerStep } from '../shared/sim.js';
 import { Timing, Steady, PressHold } from '../game/Hud';
 import WebcamPanel from '../game/webcam/WebcamPanel';
 import { cam, GESTURE_HINT, onGesture } from '../game/webcam/gestures';
@@ -64,26 +65,37 @@ function TaskPanel() {
   const bp = useShift((s) => s.blueprint);
   const st = useShift((s) => s.state);
   const banner = useShift((s) => s.banner);
+  const you = useShift((s) => s.you);
   if (!bp || !st) return null;
   if (st.game?.kind === 'sparring') return <SparringPanel bp={bp} game={st.game} />;
   const challenge = st.game?.kind === 'challenge' ? st.game : null;
   const rival = bp.game?.role === 'rival' ? bp.npcs.find(npc => npc.id === bp.game.partner) : null;
-  const cur = st.objectives[st.cur];
+  const me = st.players[you];
+  const step = playerStep(st, you);
+  const cur = step && !step.waiting ? step.obj : null;
   const done = new Set(st.done);
+  // Roles: show only this player's lane, and name the role when a teammate holds the other one.
+  const roleLabel = (id) => bp.roles?.find(r => r.id === id)?.label ?? id;
+  const lane = me?.lane ? new Set(me.lane) : null;
+  const split = Boolean(bp.roles?.length && lane && lane.size < bp.roles.length);
+  const mine = st.objectives.map((o, i) => [o, i]).filter(([o]) => !lane || !o.role || lane.has(o.role));
+  const teammates = split ? Object.entries(st.players).filter(([id]) => id !== you) : [];
+  const heading = step?.waiting ? `Waiting for ${roleLabel(step.waitingOn?.role)}` : cur ? cur.label : st.phase === 'play' ? 'Your part is done' : 'Shift complete';
   const alarm = !!banner || (st.event?.fired && Date.now() - (st.event.at ?? 0) < 8000);
   return (
     <div style={{ position: 'absolute', top: 20, left: 20, width: 340, padding: '14px 16px 12px', ...ui.panel, borderLeft: `3px solid ${alarm ? '#ff3b2f' : ui.accent}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, letterSpacing: 2, color: '#a9a39a', textTransform: 'uppercase' }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>{bp.occupation}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>{bp.occupation}{split && me?.role ? <span style={{ color: ui.accent }}> · {roleLabel(me.role)}</span> : null}</span>
         <span style={{ color: '#f2d9a6', fontVariantNumeric: 'tabular-nums' }}>{challenge ? challenge.status === 'waiting' ? '–' : remaining(challenge) : fmtTime(Date.now() - st.startedAt)}</span>
       </div>
       {challenge && <div style={{ marginTop: 8, fontSize: 13, color: '#d1d8e8' }}>Team {challenge.points} / {bp.game.goal}{rival && ` · ${rival.name} ${challenge.rivalPoints}`}</div>}
-      <div style={{ marginTop: 8, fontSize: 18, fontWeight: 700, color: '#fff', lineHeight: 1.3 }}>{cur ? cur.label : 'Shift complete'}</div>
+      <div style={{ marginTop: 8, fontSize: 18, fontWeight: 700, color: step?.waiting ? '#cfc6b8' : '#fff', lineHeight: 1.3 }}>{heading}</div>
+      {step?.waiting && step.waitingOn && <div style={{ marginTop: 5, fontSize: 13, color: '#d8d0c4', lineHeight: 1.4 }}>They need to: {step.waitingOn.label}. Then: {step.obj.label}.</div>}
       {cur?.tip && <div style={{ marginTop: 5, fontSize: 13, color: '#d8d0c4', lineHeight: 1.4 }}><span style={{ color: ui.accent, fontWeight: 700 }}>Pro tip </span>{cur.tip}</div>}
       <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 3 }}>
-        {st.objectives.map((o, i) => {
-          const isDone = done.has(o.id) || i < st.cur;
-          const isCur = i === st.cur;
+        {mine.map(([o, i]) => {
+          const isDone = done.has(o.id);
+          const isCur = i === step?.index;
           return (
             <div key={`${o.id}${i}`} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 13, color: isDone ? '#7d8a7f' : isCur ? '#fff' : '#a9a39a', textDecoration: isDone ? 'line-through' : 'none' }}>
               <span style={{ width: 16, flex: '0 0 16px', textAlign: 'center', color: isDone ? '#3cff8a' : isCur ? ui.accent : '#666', textDecoration: 'none' }}>{isDone ? '✓' : isCur ? '▸' : '·'}</span>
@@ -92,6 +104,14 @@ function TaskPanel() {
           );
         })}
       </div>
+      {teammates.map(([id, p]) => {
+        const theirs = playerStep(st, id);
+        return (
+          <div key={id} style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 12, color: '#a9a39a', lineHeight: 1.4 }}>
+            <b style={{ color: '#d8d0c4' }}>{p.name}</b>{p.role ? ` · ${roleLabel(p.role)}` : ''}: {theirs ? (theirs.waiting ? `waiting on you to ${theirs.waitingOn?.label.toLowerCase() ?? 'finish'}` : theirs.obj.label) : 'done'}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -104,7 +124,7 @@ export function mentorOf(bp) {
 // Says each step's tip when the step starts, once per step.
 function Coach() {
   const bp = useShift((s) => s.blueprint);
-  const cur = useShift((s) => s.state?.objectives?.[s.state.cur]);
+  const cur = useShift((s) => { const step = s.state ? playerStep(s.state, s.you) : null; return step && !step.waiting ? step.obj : null; });
   const say = useShift((s) => s.say);
   const spoken = useRef(new Set());
   useEffect(() => {
@@ -155,9 +175,14 @@ function ConnBadge() {
   const n = useShift((s) => (s.state ? Object.keys(s.state.players).length : 0));
   const color = conn === 'open' ? '#3cff8a' : '#f2b233';
   const text = conn === 'open' ? `Connected · ${n} ${n === 1 ? 'player' : 'players'}` : conn === 'reconnecting' ? 'Reconnecting...' : 'Connecting...';
+  // Teammates can join mid-shift from the same link the lobby showed.
+  const invite = useShift((s) => s.invite) || (typeof window !== 'undefined' && useShift.getState().roomId ? `${window.location.origin}/shift?room=${encodeURIComponent(useShift.getState().roomId)}` : '');
+  const [copied, setCopied] = useState(false);
+  const copy = async () => { try { await navigator.clipboard.writeText(invite); setCopied(true); setTimeout(() => setCopied(false), 1600); } catch {} };
   return (
-    <div style={{ position: 'absolute', top: 20, right: 20, padding: '7px 12px', ...ui.panel, color: '#ddd', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+    <div style={{ position: 'absolute', top: 20, right: 20, padding: '5px 6px 5px 12px', ...ui.panel, color: '#ddd', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'auto' }}>
       <span style={{ width: 8, height: 8, borderRadius: 8, background: color, boxShadow: `0 0 8px ${color}` }} />{text}
+      {invite && <button onClick={copy} style={{ marginLeft: 4, padding: '3px 9px', borderRadius: 6, border: 0, background: copied ? '#3cff8a' : 'rgba(255,255,255,0.12)', color: copied ? '#111' : '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>{copied ? 'Copied' : 'Copy invite link'}</button>}
     </div>
   );
 }
@@ -255,6 +280,11 @@ function SkillDialog() {
 function Intro() {
   const bp = useShift((s) => s.blueprint);
   const set = useShift((s) => s.set);
+  // With a teammate on the other role, tell this player which part of the job is theirs.
+  const myRole = useShift((s) => {
+    const me = s.state?.players?.[s.you];
+    return me?.role && me.lane && bp.roles && me.lane.length < bp.roles.length ? bp.roles.find(r => r.id === me.role) : null;
+  });
   useEffect(() => onGesture((name) => {
     if (name !== 'wave' && name !== 'move') return;
     startAudio({ workplace: true, outdoors: bp.venue?.enclosure === 'outdoor' || bp.venue?.enclosure === 'open_front' });
@@ -272,6 +302,12 @@ function Intro() {
         <div style={{ fontSize: 13, letterSpacing: 6, color: ui.accent, textTransform: 'uppercase' }}>Workshift · {bp.occupation}</div>
         <div style={{ fontSize: 50, fontWeight: 900, marginTop: 6, letterSpacing: -1, lineHeight: 1.05 }}>{bp.title}</div>
         <div style={{ fontSize: 17, color: '#d8d0c4', marginTop: 14, lineHeight: 1.5 }}>{bp.briefing}</div>
+        {myRole && (
+          <div style={{ marginTop: 18, display: 'inline-block', padding: '10px 16px', borderRadius: 10, background: 'rgba(242,178,51,0.12)', border: '1px solid rgba(242,178,51,0.4)', textAlign: 'left', maxWidth: 520 }}>
+            <div style={{ fontSize: 12, letterSpacing: 3, color: ui.accent, textTransform: 'uppercase' }}>Your role · {myRole.label}</div>
+            <div style={{ fontSize: 15, color: '#fff', marginTop: 4, lineHeight: 1.4 }}>{myRole.brief}</div>
+          </div>
+        )}
         <div style={{ marginTop: 22, fontSize: 16, color: ui.accent }}>{mode === 'body' ? 'Swing your arms or wave to start' : 'Raise both shoulders or wave to start'}</div>
       </div>
     </div>

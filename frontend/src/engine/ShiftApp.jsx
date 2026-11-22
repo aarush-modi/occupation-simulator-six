@@ -3,7 +3,6 @@
 // offers labeled demo shifts on failure or after 8 s (F7), then builds and runs the generated shift.
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { QRCodeSVG } from 'qrcode.react';
 import { useShift } from './store';
 import { connect, chooseDemo, fetchRoom, fetchDemos, localPose, reconcile, samplePlayer } from './net';
 import { act, use, getIndex } from './actions';
@@ -100,15 +99,16 @@ function Game() {
   );
 }
 
-function CopyLink({ url }) {
+export function CopyLink({ url }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-      <input readOnly value={url} onFocus={(e) => e.target.select()} style={{ flex: 1, minWidth: 0, padding: '9px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.05)', color: '#ddd', fontSize: 13, fontFamily: 'ui-monospace, Consolas, monospace' }} />
+    <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+      {/* The whole link stays readable so it can also be typed on the other laptop. */}
+      <div style={{ padding: '9px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.05)', color: '#eee', fontSize: 13, lineHeight: 1.45, fontFamily: 'ui-monospace, Consolas, monospace', wordBreak: 'break-all', userSelect: 'all' }}>{url}</div>
       <button
         onClick={async () => { try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1600); } catch {} }}
-        style={{ padding: '9px 14px', borderRadius: 8, border: 0, background: copied ? '#3cff8a' : 'rgba(255,255,255,0.12)', color: copied ? '#111' : '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>
-        {copied ? 'Copied' : 'Copy link'}
+        style={{ padding: '10px 14px', borderRadius: 8, border: 0, background: copied ? '#3cff8a' : ui.accent, color: '#111', fontWeight: 800, cursor: 'pointer', fontSize: 14 }}>
+        {copied ? 'Copied' : 'Copy invite link'}
       </button>
     </div>
   );
@@ -125,7 +125,7 @@ function Lobby() {
   useEffect(() => {
     if (!s.roomId) return;
     fetchRoom(s.roomId).then((r) => {
-      // The server's invite URL uses the LAN address, so the QR works from another laptop on the same network.
+      // The server's invite URL uses the LAN address, so the link works from another laptop on the same network.
       if (r.inviteUrl) setServerInvite(r.inviteUrl);
       if (r.occupation && !useShift.getState().occupation) useShift.getState().set({ occupation: r.occupation });
       if (r.demos?.length) setDemos(r.demos);
@@ -135,6 +135,7 @@ function Lobby() {
   const local = typeof window !== 'undefined' ? `${window.location.origin}/shift?room=${encodeURIComponent(s.roomId)}` : '';
   const base = serverInvite && !/localhost|127\.0\.0\.1/.test(window.location.hostname) ? local : serverInvite ?? local;
   const invite = base ? `${base}${s.occupation ? `&job=${encodeURIComponent(s.occupation)}` : ''}` : '';
+  useEffect(() => { if (invite && useShift.getState().invite !== invite) useShift.getState().set({ invite }); }, [invite]);
   const waited = s.generatingSince ? now - s.generatingSince : 0;
   const failed = s.status === 'failed';
   const offerDemo = s.isHost && (failed || waited > 8000 || (s.status === 'ready' && !s.blueprint));
@@ -188,10 +189,7 @@ function Lobby() {
         </div>
         <div style={{ padding: 18, borderRadius: 14, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
           <div style={{ fontSize: 12, letterSpacing: 2, color: '#a9a097', textTransform: 'uppercase' }}>Invite a teammate</div>
-          <div style={{ marginTop: 12, background: '#fff', borderRadius: 10, padding: 12, display: 'grid', placeItems: 'center' }}>
-            {invite && <QRCodeSVG value={invite} size={220} level="M" />}
-          </div>
-          <div style={{ fontSize: 13, color: '#cfc6b8', marginTop: 10, lineHeight: 1.4 }}>Scan to join on another laptop. They can join now, while the shift builds.</div>
+          <div style={{ fontSize: 14, color: '#cfc6b8', marginTop: 10, lineHeight: 1.5 }}>Send this link to a teammate on another laptop on the same Wi-Fi. They can join now, while the shift builds, and take the other role.</div>
           {invite && <CopyLink url={invite} />}
         </div>
       </div>

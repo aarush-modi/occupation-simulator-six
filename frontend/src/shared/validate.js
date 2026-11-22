@@ -124,10 +124,16 @@ export function checkBlueprint(input, catalog) {
     if (bp.game.goal > count * bp.game.pointsPerTask + bonus) errors.push('Challenge goal exceeds the points available in the shorter task path.');
   }
 
+  const roleIds = new Set((bp.roles ?? []).map((r) => r.id));
+  if (roleIds.size !== (bp.roles ?? []).length) errors.push('role ids must be unique');
   const checkObjective = (o, where, isReplacement) => {
     const who = `${where} ${o.id}`;
     if (objIds.has(o.id)) errors.push(`duplicate objective id ${o.id}`);
+    // A step may only wait for one listed before it, so the solo order (list order) never waits on itself.
+    if (o.after && !objIds.has(o.after)) errors.push(`${who}: after ${o.after} must be an earlier objective`);
     objIds.add(o.id);
+    if (o.role && !roleIds.has(o.role)) errors.push(`${who}: role ${o.role} is not in roles`);
+    if (roleIds.size && !o.role) errors.push(`${who}: every objective needs a role when the shift has roles`);
     if (o.say && !npcs.has(o.say.npc)) errors.push(`${who}: say.npc ${o.say.npc} is not an npc`);
     const [stId, sub] = o.target.split('.');
     if (isReplacement && closed && stId === closed) errors.push(`${who}: uses ${closed}, which the event closes`);

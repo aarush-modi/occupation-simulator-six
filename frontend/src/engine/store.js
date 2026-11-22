@@ -19,6 +19,7 @@ export const useShift = create((set, get) => ({
   subtitle: null, // { who, text, id }
   banner: null, // { text, who, id }
   lastObjective: null, // { label, id } flash when an objective completes
+  invite: '', // link a teammate opens to join this room
   set: (patch) => set(patch),
   setFocus: (focus) => { if (get().focus?.id !== focus?.id || get().focus?.label !== focus?.label) set({ focus }); },
   toastMsg: (text, kind = 'warn', ms = 2400) => {

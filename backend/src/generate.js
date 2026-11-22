@@ -60,6 +60,13 @@ export function responseSchema(menu, { propEnums = false } = {}) {
   // The realism fields (mentor, career) are optional for stored shifts but always written for new ones.
   s.required = [...s.required.filter(key => key !== 'version'), 'venue', 'mentor', 'career'];
   const P = s.properties;
+  // Multiplayer roles are hand-authored in demo shifts for now; the model does not write them.
+  delete P.roles;
+  for (const list of [P.objectives, P.event?.properties?.replaceRemaining]) {
+    const props = list?.items?.properties;
+    if (props) { delete props.role; delete props.after; }
+  }
+  s.required = s.required.filter(key => key !== 'roles');
   // Anchor enums are small. The semantic validator checks catalog IDs against the full catalog.
   if (propEnums) {
     const ids = (...kinds) => menu.filter((r) => kinds.includes(r.kind)).map((r) => r.id);

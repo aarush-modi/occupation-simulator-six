@@ -101,13 +101,14 @@ function RemotePlayer({ id, index }) {
   const motion = useRef({ speed: 0, carry: false });
   const last = useRef(null);
   const name = useShift((s) => s.state?.players?.[id]?.name ?? 'Player');
+  const role = useShift((s) => { const r = s.state?.players?.[id]?.role; return r ? s.blueprint?.roles?.find(x => x.id === r)?.label ?? null : null; });
   const boxing = useShift((s) => s.state?.game?.kind === 'sparring');
   useEffect(() => {
     const anchors = { left: left.current, right: right.current };
     handGrips.set(id, anchors);
     return () => { if (handGrips.get(id) === anchors) handGrips.delete(id); };
   }, [id]);
-  useLabel(`player:${id}`, { pos: () => { const p = samplePlayer(id); return p ? [p.pos[0], 2.16, p.pos[2]] : null; }, title: name, sub: 'Teammate', color: PLAYER_COLORS[index % PLAYER_COLORS.length] });
+  useLabel(`player:${id}`, { pos: () => { const p = samplePlayer(id); return p ? [p.pos[0], 2.16, p.pos[2]] : null; }, title: name, sub: role ?? 'Teammate', color: PLAYER_COLORS[index % PLAYER_COLORS.length] });
   const look = useMemo(() => {
     const seed = hash(id);
     return { ...outfitProps('casual', seed), outfit: std(PLAYER_COLORS[index % PLAYER_COLORS.length], 0.85) };

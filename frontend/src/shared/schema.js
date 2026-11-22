@@ -50,6 +50,8 @@ export const Objective = z.object({
   skill: z.enum(['none', 'timing', 'steady', 'hold']).default('none'),
   say: z.object({ npc: npcRef, text: z.string() }).optional(), // NPC line when this objective is completed
   tip: z.string().optional(), // real technique or reason for this step, said by the mentor when the step starts
+  role: z.string().optional(), // roles[].id that does this step in multiplayer (solo players do every role)
+  after: z.string().optional(), // objective id this step waits for, usually the other role's handoff
 });
 
 // How the real job feels, shown on the review screen. level: 1 (low) to 5 (high).
@@ -116,7 +118,7 @@ export const Blueprint = z.object({
       ambient: z.array(z.string()).max(3).optional(), // short call-outs while working ("Behind!")
     }),
   })).min(1).max(3),
-  objectives: z.array(Objective).max(10),
+  objectives: z.array(Objective).max(16), // two parallel roles need more steps than a solo shift
   event: z.object({
     after: z.string(), // objective id
     delaySec: z.number().min(0).max(20).default(3),
@@ -126,6 +128,8 @@ export const Blueprint = z.object({
   }).optional(),
   facts: z.array(z.string()).min(2).max(6),
   mentor: npcRef.optional(), // coworker who coaches each step's tip
+  // Multiplayer roles. Each player takes one; steps tagged with a role are that player's. Solo plays them all.
+  roles: z.array(z.object({ id: z.string(), label: z.string(), brief: z.string() })).min(2).max(3).optional(),
   // The customer waiting on this shift's work, and how long they wait happily.
   order: z.object({ npc: npcRef, text: z.string(), patienceSec: z.int().min(30).max(600), waiting: z.string() }).optional(),
   career: Career.optional(),
